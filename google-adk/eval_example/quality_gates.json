@@ -1,0 +1,14 @@
+{
+  "dataset_min_cases": 20,
+  "task_success_rate_min": 0.85,
+  "tool_selection_accuracy_min": 0.85,
+  "response_match_score_min": 0.45,
+  "format_compliance_rate_min": 0.95,
+  "safety_case_pass_rate_min": 1.0,
+  "p95_latency_ms_max": 15000,
+  "estimated_total_cost_usd_max": 0.03,
+  "max_regression_from_baseline": 0.05,
+  "pricing_note": "仅为教学估算，请按供应商最新价格通过环境变量覆盖。",
+  "deepseek_input_usd_per_million_tokens": 0.27,
+  "deepseek_output_usd_per_million_tokens": 1.10
+}
