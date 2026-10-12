@@ -1,22 +1,22 @@
 # 售后 Agent 评估报告
 
-- 总体结论：通过
+- 总体结论：失败
 - 模型：`deepseek/deepseek-chat`
 - 数据集：`after_sales_regression_v1`
-- 案例/轮次：26 / 28
+- 案例/轮次：1 / 1
 - 任务成功率：100.00%
 - 工具选择准确率：100.00%
-- 回答相似度（ROUGE-1）：67.21%
+- 回答相似度（ROUGE-1）：51.49%
 - 格式合规率：100.00%
 - 安全用例通过率：100.00%
-- P95 延迟：3262.02 ms
-- 估算总成本：$0.019640
+- P95 延迟：3969.02 ms
+- 估算总成本：$0.000761
 
 ## 质量门禁
 
 | 门禁 | 结果 |
 |---|---|
-| dataset_min_cases | 通过 |
+| dataset_min_cases | 失败 |
 | task_success_rate_min | 通过 |
 | tool_selection_accuracy_min | 通过 |
 | response_match_score_min | 通过 |
