@@ -23,7 +23,11 @@ agent-frameworks/
 │   ├── 04-多智能体与工作流.ipynb
 │   ├── 05-会话-状态与记忆.ipynb
 │   ├── 06-回调-观测与部署.ipynb
-│   └── 07-动态工作流-Dynamic-agent-workflows.ipynb
+│   ├── 07-动态工作流-Dynamic-agent-workflows.ipynb
+│   ├── 08-动态工作流-恢复与运行保障.ipynb
+│   ├── practice/                          ← 各章练习的参考实现（c1_* / c7_* / c8_*）
+│   ├── eval_example/                      ← 第六章「评估」的完整可运行工程
+│   └── workflow_example/                  ← 第八章独立进程综合工程
 │
 └── langchain-langgraph/                   【LangChain / LangGraph 系列】
     ├── 01-LangChain生态与模型接入.ipynb
@@ -96,7 +100,7 @@ uv run jupyter lab
 ```mermaid
 flowchart TD
     A["00 框架全景与选型对比<br/>（建立全局认知）"] --> B{"选择学习线路"}
-    B --> C["Google ADK 线路<br/>01 → 02 → 03 → 04 → 05 → 06 → 07"]
+    B --> C["Google ADK 线路<br/>01 → 02 → 03 → 04 → 05 → 06 → 07 → 08"]
     B --> D["LangChain / LangGraph 线路<br/>01 → 02 → 03 → 04 → 05 → 06"]
     C --> E["对照阅读：两大框架同主题章节互看<br/>（工具 vs 工具、多智能体 vs 多智能体……）"]
     D --> E
@@ -106,4 +110,4 @@ flowchart TD
 - **零基础**：先读 `00`，再任选一条线路顺序学习；
 - **已有 LangChain 经验**：直接进 ADK 线路，每章末尾都有「与 LangChain 对照」小节；
 - **已有 ADK 经验**：直接进 LangChain 线路，重点关注 `04`（LangGraph 图模型）——这是两个框架设计哲学差异最大的地方。
-- **ADK 2.x 动态编排**：阅读 [07-动态工作流-Dynamic-agent-workflows](google-adk/07-动态工作流-Dynamic-agent-workflows.ipynb)，按当前锁定的 `google-adk 2.6.3` 学习代码编排、并发、重试与人工确认恢复；基础示例无需 API Key，LLM 示例沿用 DeepSeek。
+- **ADK 2.x 动态编排**：先读 [07-动态工作流基础](google-adk/07-动态工作流-Dynamic-agent-workflows.ipynb)，从第四章写作流水线迁移，学习传值、条件、迭代和并发；再读 [08-恢复与运行保障](google-adk/08-动态工作流-恢复与运行保障.ipynb)，学习人工确认、checkpoint、execution ID、重试、超时与存储幂等。第八章的 [综合工程](google-adk/workflow_example/README.md) 实际验证三进程间的模型调用、持久归档与故障恢复。两章分别独立运行，需要 `DEEPSEEK_API_KEY`，均保留实际执行输出和验收汇总；所需依赖已纳入 `uv sync`。

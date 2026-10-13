@@ -1,0 +1,18 @@
+{
+  "flow_version": "content-review-v1",
+  "max_revisions": 1,
+  "items": [
+    {
+      "id": "dynamic",
+      "topic": "ADK Dynamic workflows",
+      "required_terms": ["Python", "暂停"],
+      "notes": "控制流由 Python 条件、循环和函数调用表达，不等于模型自主委派。可调用 LLM，也可完全不调用 LLM。人工审核用 RequestInput 暂停，收到匹配回复后恢复，不用循环轮询。"
+    },
+    {
+      "id": "checkpoint",
+      "topic": "ADK checkpoint",
+      "required_terms": ["父节点", "子节点"],
+      "notes": "恢复时父节点重新进入函数，已完成子节点结果从 checkpoint 回放，未完成步骤继续。例子是生成草稿后暂停审批，恢复时不重新生成草稿。调用栈不被冻结；重启需持久化会话和兼容代码；外部幂等另行保证。"
+    }
+  ]
+}

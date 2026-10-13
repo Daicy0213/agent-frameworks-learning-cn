@@ -13,6 +13,8 @@ dependencies = [
     "litellm==1.96.2",
     "openai>=2.54.0",
     "python-dotenv>=1.2.3",
+    # 第 8 章使用 DatabaseSessionService + SQLite 验证跨进程恢复。
+    "sqlalchemy[asyncio]>=2,<3",
     # eval_example 复用 ADK 的 Unicode ROUGE 实现计算 response_match_score。
     # 不安装完整 [eval] extra，原因见 eval_example/README.md。
     "rouge-score>=0.1.2",
