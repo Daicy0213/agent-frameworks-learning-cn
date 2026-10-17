@@ -1,105 +1,59 @@
-"""第 7 章练习 2：高风险工具的策略执行点。
-
-不调用模型：直接调用 before_tool 回调，验证拒绝时工具本体不会执行，
-以及幂等键能让重复请求只产生一次副作用。
-
-运行：uv run python c7_2.py
-"""
-
+"""第 7 章练习 2：可信身份驱动 callback，工具本体再次校验。"""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+import json
+import sys
+import tempfile
+from pathlib import Path
 
-from _common import run
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-MAX_REFUND = 1000
-AGENT_AUTO_LIMIT = 200
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
-
-@dataclass
-class FakeTool:
-    name: str = "create_refund_request"
-
-
-EXECUTED: list[dict] = []
-LEDGER: dict[str, dict] = {}
-
-
-def refund_policy(tool, args: dict, tool_context):
-    """before_tool 回调：返回 None 放行，返回 dict 短路。"""
-    role = args.get("role")
-    amount = args.get("amount")
-    approval = args.get("approval_code")
-    key = args.get("idempotency_key")
-
-    if role not in {"agent", "manager"}:
-        return {"ok": False, "error": "ROLE_DENIED", "detail": "缺少有效角色"}
-
-    if not isinstance(amount, (int, float)) or amount <= 0:
-        return {"ok": False, "error": "INVALID_AMOUNT", "amount": amount}
-
-    if amount > MAX_REFUND:
-        return {"ok": False, "error": "AMOUNT_EXCEEDED", "limit": MAX_REFUND}
-
-    if role == "agent" and amount > AGENT_AUTO_LIMIT and not approval:
-        return {"ok": False, "error": "APPROVAL_REQUIRED", "limit": AGENT_AUTO_LIMIT}
-
-    if not key:
-        return {"ok": False, "error": "IDEMPOTENCY_KEY_REQUIRED"}
-
-    return None
+from capstone.agent import build_agent
+from capstone.store import ALICE, MANAGER, VIEWER, RefundStore
 
 
-def attempt(args: dict) -> dict | None:
-    """模拟框架：先过策略，放行才执行工具本体。"""
-    decision = refund_policy(FakeTool(), args, None)
-    if decision is not None:
-        return decision
-
-    key = args["idempotency_key"]
-    if key in LEDGER:
-        return {"ok": True, "deduplicated": True, "request": LEDGER[key]}
-
-    record = {"user_id": args["user_id"], "amount": args["amount"]}
-    LEDGER[key] = record
-    EXECUTED.append(record)
-    return {"ok": True, "deduplicated": False, "request": record}
+def policy_for(principal):
+    """身份绑定在宿主闭包中，不从模型的 args 中获取。"""
+    def before_tool(tool, args, tool_context):
+        if tool.name == "create_refund" and principal.role != "agent":
+            return {"ok": False, "error": "ROLE_DENIED"}
+        return None
+    return before_tool
 
 
-def base(**overrides) -> dict:
-    args = {
-        "user_id": "U1",
-        "role": "agent",
-        "amount": 100,
-        "approval_code": None,
-        "idempotency_key": "K1",
-    }
-    args.update(overrides)
-    return args
-
-
-def main():
-    assert attempt(base(role="guest"))["error"] == "ROLE_DENIED"
-    assert attempt(base(amount=0))["error"] == "INVALID_AMOUNT"
-    assert attempt(base(amount=5000))["error"] == "AMOUNT_EXCEEDED"
-    assert attempt(base(amount=300))["error"] == "APPROVAL_REQUIRED"
-    assert attempt(base(idempotency_key=None))["error"] == "IDEMPOTENCY_KEY_REQUIRED"
-
-    # 被拒绝的请求没有产生任何副作用
-    assert EXECUTED == [], f"拒绝路径不应执行工具，实际执行了 {EXECUTED}"
-
-    # 合法的大额退款：需要审批码
-    result = attempt(base(amount=300, approval_code="APR-1"))
-    assert result["ok"] and not result["deduplicated"]
-    assert len(EXECUTED) == 1
-
-    # 重复请求：同一个幂等键只执行一次
-    again = attempt(base(amount=300, approval_code="APR-1"))
-    assert again["ok"] and again["deduplicated"] is True
-    assert len(EXECUTED) == 1, "重复请求不应产生第二条副作用"
-
-    print("✅ 拒绝无副作用、审批门槛、幂等去重全部通过")
+async def main():
+    with tempfile.TemporaryDirectory() as directory:
+        store = RefundStore(Path(directory) / "refunds.sqlite")
+        approval = store.issue_approval(MANAGER, ALICE, "A100", 3000)
+        scenario = dict(order_id="A100", amount_cents=3000, approval_id=approval, request_key="k")
+        original_refund = store.refund
+        business_calls = []
+        def tracked_refund(*args, **kwargs):
+            business_calls.append((args, kwargs))
+            return original_refund(*args, **kwargs)
+        store.refund = tracked_refund
+        agent = build_agent(store, VIEWER)
+        agent.before_tool_callback = policy_for(VIEWER)
+        sessions = InMemorySessionService()
+        await sessions.create_session(app_name="policy", user_id="student", session_id="s")
+        runner = Runner(agent=agent, app_name="policy", session_service=sessions)
+        events = [event async for event in runner.run_async(user_id="student", session_id="s",
+            new_message=types.Content(role="user", parts=[types.Part(text=json.dumps(scenario))]))]
+        results = [r.response for event in events for r in event.get_function_responses()]
+        assert results[-1]["error"] == "ROLE_DENIED" and store.ledger() == []
+        assert business_calls == [], "callback 拒绝时不能进入工具本体"
+        # 即使绕过 callback，工具的业务边界仍拒绝相同身份。
+        assert store.refund(VIEWER, **scenario)["error"] == "ROLE_DENIED"
+        assert store.refund(ALICE, **scenario)["ok"]
+        assert store.refund(ALICE, **scenario)["duplicate"]
+        assert len(store.ledger()) == 1
+    print("PASS 真实 Runner 短路、工具本体复核、授权后幂等")
 
 
 if __name__ == "__main__":
-    run(main, need_api_key=False)
+    asyncio.run(main())

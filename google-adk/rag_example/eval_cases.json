@@ -1,0 +1,10 @@
+[
+  {"id": "return-window", "query": "签收后几天可以申请退货？", "tenant_id": "shop-a", "as_of": "2026-10-01", "relevant_ids": ["shop-a/returns@2026-01#p1"]},
+  {"id": "refund-time", "query": "退款多久原路退回？", "tenant_id": "shop-a", "as_of": "2026-10-01", "relevant_ids": ["shop-a/returns@2026-01#p2"]},
+  {"id": "shipping-cost", "query": "质量问题的退货运费谁承担？", "tenant_id": "shop-a", "as_of": "2026-10-01", "relevant_ids": ["shop-a/shipping@2026-01#p1"]},
+  {"id": "warranty", "query": "保修覆盖进水吗？", "tenant_id": "shop-a", "as_of": "2026-10-01", "relevant_ids": ["shop-a/warranty@2026-01#p1"]},
+  {"id": "other-tenant", "query": "签收后几天可以申请退货？", "tenant_id": "shop-b", "as_of": "2026-10-01", "relevant_ids": ["shop-b/returns@2026-01#p1"]},
+  {"id": "historical", "query": "签收后几天可以申请退货？", "tenant_id": "shop-a", "as_of": "2025-10-01", "relevant_ids": ["shop-a/returns@2025-01#p1"]},
+  {"id": "no-evidence", "query": "火星移民船票多少钱？", "tenant_id": "shop-a", "as_of": "2026-10-01", "relevant_ids": []},
+  {"id": "unknown-tenant", "query": "退款多久？", "tenant_id": "shop-z", "as_of": "2026-10-01", "relevant_ids": []}
+]

@@ -1,140 +1,99 @@
-# Agent 框架深度教学：Google ADK vs LangChain / LangGraph
+# Agent 框架教学：Google ADK 与 LangChain / LangGraph
 
-本仓库是一套**可执行的 Jupyter 教学笔记**，以教学视角系统讲解两大主流 Agent 开发框架：
+这套课程面向**会写 Python、了解 LLM 基本原理、尚未学过 ADK** 的读者。目标是从跑通一个 Agent，逐步走到能设计数据契约、诊断失败、检验模型质量，并交付可验收的服务。
 
-- **Google ADK（Agent Development Kit）** —— Google 开源的智能体开发套件
-- **LangChain / LangGraph** —— 生态最庞大的 LLM 应用框架与底层图编排引擎
+课程使用锁定版本的真实框架。机制实验采用确定性的本地模型或普通节点；观察真实生成行为时使用 DeepSeek。**离线验收证明协议与代码路径，在线评估检验目标模型的表现，二者都需要。**
 
-所有代码示例均使用 **DeepSeek**（`deepseek-chat`）作为底层大模型，开箱即可运行。
+## 能力路线与毕业标准
 
----
+先读 [00-框架全景与选型对比](00-框架全景与选型对比.ipynb)，再按阶段前进。阶段验收要求修改或解释新案例，不能只以原例运行成功作为学会的证据。
 
-## 📂 目录结构
-
-```
-agent-frameworks/
-├── README.md                              ← 本文件
-├── 00-框架全景与选型对比.ipynb              ← 建议从这里开始！
-│
-├── google-adk/                            【Google ADK 系列】
-│   ├── 01-初识ADK-快速上手.ipynb
-│   ├── 02-ADK工程骨架与CLI.ipynb            ← 标准工程、adk run/web/api_server
-│   ├── 03-Agent详解-指令与结构化输出.ipynb
-│   ├── 04-工具系统.ipynb
-│   ├── 05-多智能体与工作流.ipynb
-│   ├── 06-会话-状态与记忆.ipynb
-│   ├── 07-回调与可观测性.ipynb
-│   ├── 08-动态工作流基础.ipynb
-│   ├── 09-动态工作流-恢复与运行保障.ipynb
-│   ├── 10-评估与测试工程.ipynb
-│   ├── 11-流式输出与服务化.ipynb
-│   ├── 12-安全与鉴权.ipynb
-│   ├── 13-Capstone-可上线的售后Agent.ipynb
-│   ├── 附录A-术语表.md                     ← 中英术语与首次出现章节
-│   ├── 附录B-排错手册.md
-│   ├── 附录C-A2A与跨Agent互通.md
-│   ├── agent_demo/                        ← 标准工程示例（adk web/run/api_server 可直接加载）
-│   ├── mcp_example/                       ← 本地 stdio MCP Server（不联网）
-│   ├── openapi_example/                   ← 第 4 章的本地 OpenAPI 规格
-│   ├── Dockerfile                         ← 第 11 章的镜像示例
-│   ├── practice/                          ← 各章练习的参考实现（c1_* ~ c12_*）
-│   ├── eval_example/                      ← 第 10 章「评估」的完整可运行工程
-│   ├── capstone/                          ← 第 13 章综合工程
-│   └── workflow_example/                  ← 第 09 章独立进程综合工程
-│
-└── langchain-langgraph/                   【LangChain / LangGraph 系列】
-    ├── 01-LangChain生态与模型接入.ipynb
-    ├── 02-LCEL与链式编排.ipynb
-    ├── 03-Agent与工具调用.ipynb
-    ├── 04-LangGraph核心-图与状态.ipynb
-    ├── 05-持久化-流式与人机协同.ipynb
-    └── 06-多智能体模式与生态对比.ipynb
-```
-
-## ⚙️ 环境配置
-
-本项目使用 **[uv](https://docs.astral.sh/uv/)** 管理环境与依赖（`pyproject.toml` + `uv.lock`），在 **Python 3.12** 下验证通过。
-
-### 1. 安装依赖
-
-```bash
-# 安装 uv（如已安装可跳过）：https://docs.astral.sh/uv/getting-started/installation/
-# 一键创建 .venv 并按 uv.lock 安装全部依赖
-uv sync
-```
-
-> 本仓库验证时的版本：`google-adk 2.6.3`、`langchain 1.2.15`、`langgraph 1.1.10`、`langchain-openai 1.6.0`、`litellm 1.96.2`。
-> ⚠️ 注意：`langchain 1.2.x` 需要 `langgraph >= 1.0`（0.x 会出现 `No module named 'langgraph._internal'` 报错）；同时 `langchain 1.2.15` 要求 `langgraph < 1.2.0`，因此锁定在 1.1.x。
-
-### 2. 配置 DeepSeek API Key
-
-代码通过环境变量读取密钥（**不要把密钥写进代码或 notebook**）。推荐复制 `.env.example` 为 `.env` 并填入密钥：
-
-```bash
-cp .env.example .env   # 然后编辑 .env 填入 sk-xxxxxxxx
-```
-
-启动时通过 `--env-file` 注入（见下文运行命令）。也可以手动设置环境变量：
-
-```powershell
-# Windows PowerShell（当前会话）
-$env:DEEPSEEK_API_KEY = "sk-xxxxxxxx"
-
-# Windows（永久写入用户环境变量）
-setx DEEPSEEK_API_KEY "sk-xxxxxxxx"
-```
-
-```bash
-# Linux / macOS
-export DEEPSEEK_API_KEY="sk-xxxxxxxx"
-```
-
-两个框架接入 DeepSeek 的方式对比（各章节会详细展开）：
-
-| 框架 | 接入方式 | 关键代码 |
+| 阶段 | 章节 | 完成后能独立做什么 |
 |---|---|---|
-| **Google ADK** | 通过内置 **LiteLLM** 适配层（LiteLLM 原生支持 DeepSeek，自动读取 `DEEPSEEK_API_KEY`） | `LiteLlm(model="deepseek/deepseek-chat")` |
-| **LangChain** | DeepSeek 提供 **OpenAI 兼容接口**，用 `ChatOpenAI` 改 `base_url` 即可 | `ChatOpenAI(model="deepseek-chat", base_url="https://api.deepseek.com")` |
+| 运行一个 Agent | [01 快速上手](google-adk/01-初识ADK-快速上手.ipynb) → [02 工程与 CLI](google-adk/02-ADK工程骨架与CLI.ipynb) | 建立工程，解释 Agent / Runner / Session / Event，定位失败层次 |
+| 建立数据契约 | [03 Agent、State 与输出](google-adk/03-Agent详解-指令与结构化输出.ipynb) → [04 工具](google-adk/04-工具系统.ipynb) | 提交 State 增量；分别验证 JSON、字段、业务事实；调用并关闭 MCP 工具 |
+| 组织流程与数据 | [05 声明式 Workflow](google-adk/05-多智能体与工作流.ipynb) → [06 状态与记忆](google-adk/06-会话-状态与记忆.ipynb) → [07 回调与观测](google-adk/07-回调与可观测性.ipynb) | 运行顺序、条件、汇合；分清读取方式、共享范围和持久化；用事件验证回调行为 |
+| 处理运行中的变化 | [08 动态工作流](google-adk/08-动态工作流基础.ipynb) → [09 恢复与运行保障](google-adk/09-动态工作流-恢复与运行保障.ipynb) | 编写有界循环与并发；验证人工确认、重入、回放、重试和业务幂等 |
+| 检验并提供服务 | [10 评估](google-adk/10-评估与测试工程.ipynb) → [11 流式与服务](google-adk/11-流式输出与服务化.ipynb) → [12 安全与鉴权](google-adk/12-安全与鉴权.ipynb) | 区分机制测试与质量评估；正确消费文本增量；在服务和工具边界验证可信身份与审批 |
+| 扩展并综合交付 | [13 RAG](google-adk/13-RAG集成与检索评估.ipynb) → [14 Skills](google-adk/14-Skills工程与渐进加载.ipynb) → [15 综合工程](google-adk/15-Capstone-售后Agent工程验收.ipynb) | 分开评估检索与生成；按需加载技能；让检索、技能和退款工具共用业务授权边界 |
 
-### 3. 运行
+05 主线使用当前声明式 `Workflow`，旧 `SequentialAgent`、`ParallelAgent`、`LoopAgent` 放在迁移深读。08 先运行普通 Python 与最小 ADK 程序，再解释动态调度术语。09 的机制部分不需要密钥，真实模型综合运行另有明确入口。
+
+毕业至少需要五类证据：
+
+1. **解释**：为未见过的请求画出数据、控制权、状态提交和外部写入路径。
+2. **实现**：不看答案完成 State、恢复、权限学生题，通过独立验收。
+3. **排错**：注入缺失状态、错误检索、模型异常或重复请求，定位并验证修复。
+4. **运行**：走真实 HTTP / Runner / 工具路径；服务重启后历史仍在，重复退款只产生一笔业务记录。
+5. **评估**：用未参与调参的案例检查检索、引用、工具轨迹和业务结果，明确离线实验没有证明的模型能力。
+
+综合工程边界见 [capstone/README.md](google-adk/capstone/README.md)。课程验收说明所列案例成立；实际部署还需按目标环境补齐身份提供方、密钥管理、存储运维和质量门槛。
+
+本轮修改范围与测试证据见 [课程改造与验证记录](google-adk/课程改造与验证记录.md)。
+
+## 环境与运行约定
+
+**以下命令均从仓库根目录开始执行。** 使用 Python 3.12 与 [uv](https://docs.astral.sh/uv/)，依赖以 `pyproject.toml` 和 `uv.lock` 为准。
 
 ```bash
-# 注入 .env 中的密钥并启动 JupyterLab（uv 自动使用项目 .venv）
-uv run --env-file .env jupyter lab
-
-# 若已用其他方式设置好 DEEPSEEK_API_KEY，直接：
+uv sync
 uv run jupyter lab
 ```
 
-> 💡 **Mermaid 图表**：笔记中的架构图使用 Mermaid 语法，在 **VS Code**、**GitHub** 及较新版 **JupyterLab** 的 Markdown 预览中可直接渲染；纯 JupyterLab 经典界面可能显示为源码，属正常现象。
+主要锁定版本：`google-adk 2.6.3`、`langchain 1.2.15`、`langgraph 1.1.10`、`litellm 1.96.2`。遇到 API 差异先同步环境，再检查对应版本。
 
-## 📖 阅读约定
+离线实验不需要 `.env`：
 
-每一章都使用同一套结构，读到深章节时可以按需取舍：
-
-| 标记 | 含义 | 怎么用 |
-|---|---|---|
-| **你已会 / 读完后你能 / 本章不碰** | 读者契约 | 先确认前置知识，避免在未知概念上卡住 |
-| **主线 / 深读** | 双轨阅读 | 时间有限只走主线；折叠块「深入」第二次再读 |
-| **先猜** | 预测题 | 先在心里回答，再运行代码对照 |
-| **📌 / ⚠️** | 结论 / 陷阱 | 每节最多一个，先读结论再读代码 |
-| **用五句话复述** | 章末自检 | 合上笔记讲给别人听，讲不出就回到对应小节 |
-| [附录A-术语表](google-adk/附录A-术语表.md) | 术语速查 | 中英名、代码名、一句话解释、首次出现章节 |
-
-## 🧭 推荐学习路径
-
-```mermaid
-flowchart TD
-    A["00 框架全景与选型对比<br/>（建立全局认知）"] --> B{"选择学习线路"}
-    B --> C["Google ADK 线路<br/>01 → 02 → 03 → 04 → 05 → 06 → 07<br/>→ 08 → 09 → 10 → 11 → 12 → 13"]
-    B --> D["LangChain / LangGraph 线路<br/>01 → 02 → 03 → 04 → 05 → 06"]
-    C --> E["对照阅读：两大框架同主题章节互看<br/>（工具 vs 工具、多智能体 vs 多智能体……）"]
-    D --> E
-    E --> F["回到 00 章，重新理解选型决策"]
+```bash
+uv run python -m pytest google-adk/tests google-adk/eval_example/tests -q
+uv run python google-adk/mcp_example/verify.py
+uv run --directory google-adk --project .. python -m graph_example.workflow
+uv run --directory google-adk --project .. python -m runtime_example.verify
+uv run --directory google-adk --project .. python -m rag_example.verify
+uv run --directory google-adk --project .. python -m skills_example.verify
+uv run --directory google-adk --project .. python -m capstone.verify
 ```
 
-- **零基础**：先读 `00`，再任选一条线路顺序学习；
-- **已有 LangChain 经验**：直接进 ADK 线路，每章末尾都有「与 LangChain 对照」小节；
-- **已有 ADK 经验**：直接进 LangChain 线路，重点关注 `04`（LangGraph 图模型）——这是两个框架设计哲学差异最大的地方。
-- **ADK 2.x 动态编排**：先读 [08-动态工作流基础](google-adk/08-动态工作流基础.ipynb)，从第 05 章写作流水线迁移，学习传值、条件、迭代和并发；再读 [09-恢复与运行保障](google-adk/09-动态工作流-恢复与运行保障.ipynb)，学习人工确认、checkpoint、execution ID、重试、超时与存储幂等。第 09 章的 [综合工程](google-adk/workflow_example/README.md) 实际验证三进程间的模型调用、持久归档与故障恢复。两章分别独立运行，需要 `DEEPSEEK_API_KEY`，均保留实际执行输出和验收汇总；所需依赖已纳入 `uv sync`。
-- **生产化进阶**：[10-评估与测试工程](google-adk/10-评估与测试工程.ipynb) → [11-流式输出与服务化](google-adk/11-流式输出与服务化.ipynb) → [12-安全与鉴权](google-adk/12-安全与鉴权.ipynb) → [13-Capstone](google-adk/13-Capstone-可上线的售后Agent.ipynb)。第 13 章把前 12 章串成一个可验收的完整工程。
+`--directory google-adk` 只为该命令设置工作目录，不用手动切目录。Capstone 验收会启动临时本地 HTTP 服务、验证两次独立进程运行，再清理临时数据。
+
+真实 DeepSeek 示例需要根目录 `.env` 中的 `DEEPSEEK_API_KEY`。首次配置可复制 `.env.example`；已有文件时直接编辑。不要把密钥写入代码、Notebook 或输出。
+
+```powershell
+Copy-Item .env.example .env
+# 编辑 .env 后启动
+uv run --env-file .env jupyter lab
+```
+
+Linux / macOS 可用 `cp .env.example .env`。普通脚本与模块的运行方式：
+
+```bash
+uv run --env-file .env python google-adk/practice/c3_3.py
+uv run --directory google-adk --project .. --env-file ../.env python -m capstone.verify --backend deepseek
+```
+
+真实模型会产生费用且结果可能变化。按章内预算逐个运行，记录模型、输入、指标和失败案例。第 10 章分别提供本地评估工具与官方 `adk eval` 路线，安装与入口见章内说明。
+
+## 怎么读与练
+
+按“已会与目标 → 问题 → 先猜 → 最小实验 → 证据 → 反例 → 迁移”阅读。先写预测，再执行；观察断言、事件与存储结果，不只看模型最后一句话。
+
+- **主线**形成完整运行路径；**深读**提供实现细节、框架对照和旧接口迁移，不应提供后续主线必需变量。
+- 已修改代码的旧 Notebook 输出会清除；你运行后产生的结果才是当前环境的证据。`offline` 标签标识可无密钥执行的机制实验。
+- [练习目录](google-adk/practice/README.md) 区分 TODO 学生题、独立验收和参考答案。初始学生题失败是预期行为。
+- 名词查 [术语表](google-adk/附录A-术语表.md)，失败查 [排错手册](google-adk/附录B-排错手册.md)；[A2A 附录](google-adk/附录C-A2A与跨Agent互通.md) 用于后续阅读。
+
+## 工程索引
+
+| 目录 | 用途 |
+|---|---|
+| `google-adk/agent_demo/` | 第 02 章 CLI 最小工程 |
+| `google-adk/mcp_example/`、`openapi_example/` | 第 04 章工具协议与规格 |
+| `google-adk/graph_example/` | 第 05 章声明式顺序、条件、汇合 |
+| `google-adk/workflow_example/` | 第 09 章人工确认、独立进程恢复与归档 |
+| `google-adk/eval_example/`、`official_eval_example/` | 第 10 章本地质量检查与官方评估 |
+| `google-adk/runtime_example/` | 第 11 章流式、调用预算与上下文 |
+| `google-adk/rag_example/`、`skills_example/` | 第 13、14 章扩展与独立练习 |
+| `google-adk/capstone/` | 第 15 章服务、Runner、持久化与业务工具联合验收 |
+| `google-adk/practice/`、`tests/` | 练习参考、学生骨架和机制回归测试 |
+
+LangChain / LangGraph 路线保留六章：[01 模型接入](langchain-langgraph/01-LangChain生态与模型接入.ipynb) → [02 LCEL](langchain-langgraph/02-LCEL与链式编排.ipynb) → [03 Agent 与工具](langchain-langgraph/03-Agent与工具调用.ipynb) → [04 图与状态](langchain-langgraph/04-LangGraph核心-图与状态.ipynb) → [05 持久化与人机协同](langchain-langgraph/05-持久化-流式与人机协同.ipynb) → [06 多智能体](langchain-langgraph/06-多智能体模式与生态对比.ipynb)。学过其中一套后再按主题对照，最后回到 00 章重新做选型判断。

@@ -27,7 +27,7 @@ APP, USER = "adk_practice", "student"
 def require_env() -> None:
     """需要真实调用模型时的前置检查：缺少密钥或版本不符就直接报错。
 
-    这是有意"不静默跳过"的：第 7、8 章的结论都建立在真实模型行为上，
+    这是有意"不静默跳过"的：第 8、9 章的结论都建立在真实模型行为上，
     悄悄换成本地假数据会让验证失去意义。
     """
     require_google_adk()
@@ -41,7 +41,7 @@ def require_google_adk() -> None:
 
 
 def deepseek(max_tokens: int = 768) -> LiteLlm:
-    """与第 7、8 章一致的接入方式：JSON Output + 本地 Pydantic 校验。"""
+    """与第 8、9 章一致的接入方式：JSON Output + 本地 Pydantic 校验。"""
     return LiteLlm(
         model="deepseek/deepseek-chat",
         max_tokens=max_tokens,

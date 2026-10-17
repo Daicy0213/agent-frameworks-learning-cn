@@ -1,0 +1,129 @@
+{
+  "backend": "docker",
+  "runs": [
+    {
+      "passed": true,
+      "cases": [
+        {
+          "eval_id": "order_found",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        },
+        {
+          "eval_id": "order_missing",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        },
+        {
+          "eval_id": "need_order_id",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        }
+      ],
+      "cli_exit_code": 0,
+      "run": "green"
+    },
+    {
+      "passed": false,
+      "cases": [
+        {
+          "eval_id": "order_found",
+          "status": 2,
+          "metrics": {
+            "tool_trajectory_avg_score": 0.0,
+            "response_match_score": 1.0
+          }
+        }
+      ],
+      "cli_exit_code": 0,
+      "run": "broken"
+    },
+    {
+      "passed": true,
+      "cases": [
+        {
+          "eval_id": "order_missing",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        },
+        {
+          "eval_id": "need_order_id",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        },
+        {
+          "eval_id": "order_found",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        }
+      ],
+      "cli_exit_code": 0,
+      "run": "repaired"
+    },
+    {
+      "passed": true,
+      "cases": [
+        {
+          "eval_id": "order_missing",
+          "status": 1,
+          "metrics": {
+            "tool_trajectory_avg_score": 1.0,
+            "response_match_score": 1.0
+          }
+        }
+      ],
+      "cli_exit_code": 0,
+      "run": "selected"
+    }
+  ],
+  "verified_date": "2026-10-17",
+  "python": "3.12.15",
+  "platform": "Docker Linux, python:3.12-slim",
+  "packages": {
+    "google-adk": "2.6.3",
+    "litellm": "1.96.2",
+    "google-cloud-aiplatform": "2.5.0",
+    "google-genai": "2.31.0",
+    "pandas": "2.3.3",
+    "rouge-score": "0.1.2",
+    "tabulate": "0.9.0"
+  },
+  "pip_check": "No broken requirements found.",
+  "check_result_exit_codes": {
+    "green": 0,
+    "broken": 1
+  },
+  "offline_network": "none",
+  "online_smoke": {
+    "model": "deepseek/deepseek-chat",
+    "eval_id": "order_found",
+    "cli_exit_code": 0,
+    "final_eval_status": 1,
+    "model_api_calls_observed": 2,
+    "metrics": {
+      "tool_trajectory_avg_score": 1.0,
+      "response_match_score": 1.0
+    },
+    "scope": "one case only; not a full model-quality evaluation"
+  },
+  "offline_model_api_calls": 0,
+  "total_model_api_calls_observed": 2
+}

@@ -14,8 +14,9 @@
 
 import json
 from datetime import date
+from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from _common import deepseek, run
 from google.adk.agents import Agent
@@ -27,15 +28,17 @@ from _common import APP, USER
 
 
 class ActionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     owner: str = Field(min_length=1, description="负责人")
     task: str = Field(min_length=1, description="任务描述")
-    due_date: str = Field(description="截止日期，格式 YYYY-MM-DD")
-    priority: str = Field(description="优先级：low / normal / high")
-    risk: str = Field(description="风险提示，没有风险时写 none")
+    due_date: date = Field(description="截止日期，格式 YYYY-MM-DD")
+    priority: Literal["low", "normal", "high"]
+    risk: str = Field(min_length=1, description="风险提示，没有风险时写 none")
 
 
 class ActionItems(BaseModel):
-    items: list[ActionItem]
+    model_config = ConfigDict(extra="forbid")
+    items: list[ActionItem] = Field(min_length=1)
 
 
 MEETING_NOTES = """
@@ -68,18 +71,22 @@ agent = Agent(
 
 
 def business_check(result: ActionItems) -> list[str]:
-    """schema 管不到的业务规则。"""
+    """对照输入事实；类型与取值范围已经由 Pydantic 检查。"""
+    expected_dates = {"小王": date(2026, 10, 19), "小李": date(2026, 10, 21), "老张": date(2026, 10, 23)}
+    meeting_date = date.fromisoformat(facts["meeting_date"])
     problems = []
-    allowed = {"low", "normal", "high"}
+    owners = [item.owner for item in result.items]
+    if set(owners) != set(expected_dates) or len(owners) != len(set(owners)):
+        problems.append("负责人必须完整且不重复，与输入记录一致")
     for item in result.items:
-        try:
-            date.fromisoformat(item.due_date)
-        except ValueError:
-            problems.append(f"{item.owner}: 日期格式错误 {item.due_date}")
-        if item.priority not in allowed:
-            problems.append(f"{item.owner}: 非法优先级 {item.priority}")
-    if not result.items:
-        problems.append("没有抽取到任何行动项")
+        if item.due_date < meeting_date:
+            problems.append(f"{item.owner}: 截止日期早于会议日期")
+        if item.owner in expected_dates and item.due_date != expected_dates[item.owner]:
+            problems.append(f"{item.owner}: 截止日期与会议事实不符")
+        if item.owner == "老张" and item.priority != "high":
+            problems.append("老张的行动项在会议中明确为高优先级")
+        if item.owner == "小李" and "测试环境" not in item.risk:
+            problems.append("小李的行动项遗漏测试环境风险")
     return problems
 
 
@@ -100,10 +107,7 @@ async def main():
         if event.is_final_response() and event.content and event.content.parts:
             text += event.content.parts[0].text or ""
 
-    # 第一层：JSON 格式（容忍模型偶尔包一层代码块）
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+    # 第一层：JSON mode 仍需严格解析；不把代码块包装当作符合契约。
     raw = json.loads(text)
 
     # 第二层：Pydantic 字段校验

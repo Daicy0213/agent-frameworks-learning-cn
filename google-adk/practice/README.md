@@ -1,83 +1,90 @@
-# 练习参考实现
+# 练习、学生骨架与独立验收
 
-本目录存放第 1、3、4、5、6、7、8、9、10、11、12 章「🧪 本章练习」的参考实现。**建议先自己写完，再打开对照**——直接读答案会跳过最有价值的那一段思考。
+**先补学生骨架，再运行独立验收，最后对照参考实现。** 直接运行答案能确认环境，不能证明你会独立解决同类问题。
 
-## 文件命名
+## 学生题
 
-`c<章号>_<题号>.py`，例如 `c8_3.py` 是第 8 章练习 3 的参考实现。
+| 学生题 | 先修 | 验收重点 |
+|---|---|---|
+| [State 提交](student_state/README.md) | 第 03、04 章 | 真实 ToolContext、嵌套复制与顶层赋值、delta、提交前后、会话隔离 |
+| [恢复后去重](student_recovery/README.md) | 第 09 章 | 不同 PID 的竞争、重投与异内容冲突、版本和回执 |
+| [服务端权限](student_security/README.md) | 第 12 章 | 可信身份、角色与租户、资源归属；业务输入不能伪造身份 |
 
-| 文件 | 对应 |
-|---|---|
-| `c1_1.py` ~ `c1_4.py` | 第 1 章练习 1–4（练习 5 是纯思考题） |
-| `c3_2.py` | 第 3 章练习 2：动态 instruction、状态接力、`output_key` |
-| `c3_3.py` | 第 3 章练习 3：DeepSeek 上的两阶段结构化输出 |
-| `c4_2.py` | 第 4 章练习 2：ToolContext 购物车（离线） |
-| `c4_3.py` | 第 4 章练习 3：AgentTool 与普通工具的职责划分（在线） |
-| `c5_4.py` | 第 5 章练习 4：混合客服系统，含退款流水线与顶层路由（在线） |
-| `c6_1.py` | 第 6 章练习 1：四种状态作用域（离线） |
-| `c6_2.py` | 第 6 章练习 2：跨会话偏好与"忘记"的边界（离线） |
-| `c7_1.py` | 第 7 章练习 1：多层输入护栏（离线） |
-| `c7_2.py` | 第 7 章练习 2：高风险工具策略与幂等（离线） |
-| `c8_1.py` ~ `c8_5.py` | 第 8 章练习 1–5 |
-| `c9_1.py` ~ `c9_5.py` | 第 9 章练习 1–5 |
-| `c10_1.py` | 第 10 章练习 1：离线校验评估集（离线） |
-| `c11_1.py` | 第 11 章练习 2：消费 `/run_sse`（在线） |
-| `c12_1.py` | 第 12 章练习 1：扩展输入护栏与日志脱敏（离线） |
-| `c12_2.py` | 第 12 章练习 2：最小权限、审批、幂等与间接注入（离线） |
-
-> 第 1 章练习 5、第 2 章的部分思考题、第 5 章的纯设计题不需要编码，所以没有对应文件。
->
-> 第 3 章练习 2 对应旧编号的 `c2_2.py`；第 4 章练习 2 对应旧 `c3_2.py`。改名是为了让文件名始终对应当前章号。
-
-## 运行方式
-
-在仓库根目录执行 `uv sync`，并配置好环境变量 `DEEPSEEK_API_KEY`。
+**以下命令从仓库根目录执行。** 先运行 `uv sync`。离线题不需要 `.env` 或密钥：
 
 ```bash
-# 第 1 章：独立脚本
-uv run --env-file .env python google-adk/practice/c1_1.py
+uv run python google-adk/practice/student_state/verify.py
+uv run python google-adk/practice/student_recovery/verify.py
+uv run python google-adk/practice/student_security/verify.py
 ```
 
+未填写 TODO 时失败是预期行为。只修改各题 `solution.py`，不要改验收器。三题均可加 `--reference` 检查参考答案，这不会替你填入实现。
+
+第 13、14 章另有扩展题：修改 `rag_example/exercise.py` 或 `skills_example/exercise.py` 后运行：
+
 ```bash
-# c1_4 支持先自检再运行（--check 不需要密钥）
+uv run --directory google-adk --project .. python -m rag_example.check_exercise
+uv run --directory google-adk --project .. python -m skills_example.check_exercise
+```
+
+RAG 题改善基线漏召回，Skills 题补齐业务授权。它们与示范用 `verify` 分开，空骨架应失败。
+
+## 参考实现
+
+`c<章号>_<题号>.py` 对应当前章节。第 05 章重编后保留 `c5_4.py` 供旧接口迁移阅读。
+
+| 文件 | 模型需求 | 关键验收 |
+|---|---|---|
+| `c1_1.py`、`c1_2.py` | DeepSeek | 真实模型接入与事件观察 |
+| `c1_3.py` | 离线 | 用实际事件历史证明 app / user / session 隔离 |
+| `c1_4.py` | DeepSeek；`--check` 离线 | 环境诊断与可解释错误 |
+| `c3_2.py` | DeepSeek | 三类分诊输入、JSON / Pydantic 字段、VIP 与缺值规则 |
+| `c3_3.py` | DeepSeek | JSON mode、日期与枚举、负责人和截止日期的事实一致性 |
+| `c4_2.py` | 离线 | 真实 ToolContext / State；嵌套原地修改反例、事件提交正例 |
+| `c4_3.py` | DeepSeek | 取数工具与 AgentTool 的职责 |
+| `c5_4.py` | DeepSeek | 旧嵌套客服；声明式主线见 `graph_example/` |
+| `c6_1.py`、`c6_2.py` | 离线 | 状态作用域、跨会话偏好与删除边界 |
+| `c7_1.py` | 离线 | 输入护栏规则与反例 |
+| `c7_2.py` | 离线 | 真实 Runner / 工具路径，可信身份、权限与幂等 |
+| `c8_1.py`、`c8_2.py`、`c8_5.py` | 离线 | 编排、根输出归属、受限并发 |
+| `c8_3.py`、`c8_4.py` | DeepSeek | 真实写作与修改路径 |
+| `c9_1.py` 至 `c9_5.py` | 离线 | 人工确认、审批摘要、重试、故障策略、独立进程去重 |
+| `c10_1.py` | 离线 | 评估集契约与报告 |
+| `c11_1.py` | 默认离线；`--backend deepseek` 在线 | 真实本地 HTTP、`/run_sse` 文本增量与收尾 |
+| `c12_1.py` | 离线 | 输入规则与日志脱敏 |
+| `c12_2.py` | 离线 | 共用 Capstone 业务存储，验证审批、权限与幂等 |
+
+普通脚本可从根目录运行，Python 自动加入脚本目录用于导入，不需要先切到 `practice/`：
+
+```bash
+uv run python google-adk/practice/c1_3.py
+uv run python google-adk/practice/c4_2.py
+uv run python google-adk/practice/c9_5.py
+uv run python google-adk/practice/c11_1.py
 uv run python google-adk/practice/c1_4.py --check
 ```
 
+在线练习在根目录 `.env` 配置密钥后显式注入：
+
 ```bash
-# 其余练习复用 _common.py，需要从 practice 目录运行
-cd google-adk/practice
-uv run --project ../.. python c6_1.py
+uv run --env-file .env python google-adk/practice/c3_2.py
+uv run --env-file .env python google-adk/practice/c3_3.py
+uv run --env-file .env python google-adk/practice/c11_1.py --backend deepseek
 ```
 
-`_common.py` 放着各章共用的模型与运行辅助函数（`deepseek()` / `input_text()` / `collect()` / `start()` / `run()`），抽出来避免每个练习重复样板代码。
+`_common.py` 提供共享模型与运行函数。“启动 Runner”“启动 HTTP 服务”均不等于调用远程模型。
 
-## 哪些练习会真实调用模型
+## 通过之后再问什么
 
-| 文件 | 是否需要 `DEEPSEEK_API_KEY` | 说明 |
-|---|---|---|
-| `c1_1.py` ~ `c1_3.py` | **需要** | 第 1 章的核心就是跑通真实模型 |
-| `c1_4.py` | **需要**（`--check` 除外） | `--check` 只做配置自检 |
-| `c3_2.py` | **需要** | 3 次分诊调用 |
-| `c3_3.py` | **需要** | 1 次结构化抽取 |
-| `c4_2.py` | 不需要 | 直接调用工具函数，用假上下文验证状态 |
-| `c4_3.py` | **需要** | 取数工具 + AgentTool，约 2 次模型调用 |
-| `c5_4.py` | **需要** | 三条退款路径 + 一次顶层路由 |
-| `c6_1.py` / `c6_2.py` | 不需要 | 直接操作 SessionState |
-| `c7_1.py` / `c7_2.py` | 不需要 | 直接调用回调函数，不启动模型 |
-| `c8_1.py` / `c8_2.py` / `c8_5.py` | 不需要 | 编排、事件归属、并发 |
-| `c8_3.py` / `c8_4.py` | **需要** | 写作流水线与修改路径 |
-| `c9_1.py` ~ `c9_5.py` | 不需要 | 人工确认、审批摘要、重试、故障注入、幂等 |
-| `c10_1.py` | 不需要 | 只读评估集与报告 |
-| `c11_1.py` | **需要** | 启动临时服务并消费流式响应 |
-| `c12_1.py` / `c12_2.py` | 不需要 | 直接调用护栏、脱敏与权限函数 |
+1. **证据在哪里？** 区分内存值、State delta、提交后数据、模型回复和业务账本。
+2. **反例能失败吗？** 删掉必要校验后，至少一个验收应失败，否则可能没测到目标机制。
+3. **换输入还成立吗？** 增加未见过的输入，不仅复制示例中的订单号、字符串或输出。
+4. **还有什么没验证？** 离线模型证明调用协议，不能证明真实模型始终选对工具、理解材料或正确引用。
 
-> 💡 **17 个练习不需要密钥**。这不是巧合，而是有意设计：**凡是能去掉模型抖动的地方，就去掉。**
-> 并发上限、重试次数、幂等、审批摘要这些机制的正确性，本来就不该依赖"这次模型心情好不好"。
-> 只有"模型真的能按 JSON 格式返回吗"这类问题，才值得花掉一次真实调用。
+基础回归：
 
-## 四点说明
+```bash
+uv run python -m pytest google-adk/tests/test_course_foundations.py google-adk/tests/test_practice_foundations.py -q
+```
 
-1. **参考实现不是唯一答案。** 第 8、9 章的题目给了明确**验收标准**，只要断言覆盖了那些标准，写法可以完全不同——甚至更好。
-2. **断言比输出更重要。** 这些文件都以 `assert` 结尾，而不是"打印一下看看"。练习的目的是把"我觉得对了"变成"我能证明它对了"。
-3. **写这类测试时，别盯着错误文案。** 框架会给节点异常套一层包装（`DynamicNodeFailError`），原始消息可能丢失。断言要盯**结构化字段**：哪个 id 失败、失败了几条、执行计数是几、版本号是几。
-4. **先让错误"说人话"。** 看 `c1_4.py` 的 `ConfigError` / `ModelCallError`：缺密钥就说缺密钥、模型失败就带上会话名和原始异常。生产代码里，"报错报得清楚"和"跑得对"同样重要。
+回归检查参考程序和 Notebook 离线实验，并确认未实现的 TODO 会明确失败。学生答案仍需通过自己的验收器。第 09 章真实 ADK 跨进程恢复见 [workflow_example](../workflow_example/README.md)；恢复学生题聚焦外部写入去重，不实现 checkpoint 本身。

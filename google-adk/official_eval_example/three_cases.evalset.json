@@ -1,0 +1,119 @@
+{
+  "eval_set_id": "order_three_cases",
+  "name": "三条订单回归",
+  "eval_cases": [
+    {
+      "eval_id": "order_found",
+      "conversation": [
+        {
+          "invocation_id": "order_found-turn1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "查询订单 A1001"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "订单 A1001 已签收。"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "query_order",
+                "args": {
+                  "order_id": "A1001"
+                }
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "official_eval_example",
+        "user_id": "student",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "order_missing",
+      "conversation": [
+        {
+          "invocation_id": "order_missing-turn1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "查询订单 Z9999"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "未找到订单 Z9999，请核对订单号。"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "query_order",
+                "args": {
+                  "order_id": "Z9999"
+                }
+              }
+            ],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "official_eval_example",
+        "user_id": "student",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "need_order_id",
+      "conversation": [
+        {
+          "invocation_id": "need_order_id-turn1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "帮我查一下订单"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "请提供完整订单号。"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "official_eval_example",
+        "user_id": "student",
+        "state": {}
+      }
+    }
+  ]
+}

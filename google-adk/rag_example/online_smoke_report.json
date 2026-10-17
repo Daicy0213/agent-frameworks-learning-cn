@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-17",
+  "adk": "2.6.3",
+  "backend": "deepseek/deepseek-chat",
+  "request_limit": 2,
+  "answer": {
+    "status": "supported",
+    "text": "退货验收通过后，退款在 3 个工作日内原路退回。 [shop-a/returns@2026-01#p2]",
+    "citations": [
+      {
+        "chunk_id": "shop-a/returns@2026-01#p2",
+        "quote": "退货验收通过后，退款在 3 个工作日内原路退回。"
+      }
+    ]
+  },
+  "status": "passed",
+  "trace": [
+    {
+      "kind": "call",
+      "name": "search_policy"
+    },
+    {
+      "kind": "response",
+      "name": "search_policy"
+    }
+  ],
+  "model_requests": [
+    {
+      "number": 1,
+      "declared_tools": [
+        "search_policy"
+      ],
+      "returned_calls": [
+        {
+          "name": "search_policy",
+          "args": {
+            "query": "退款原路退回 到账时间"
+          }
+        }
+      ],
+      "usage": {
+        "cached_content_token_count": 0,
+        "candidates_token_count": 45,
+        "prompt_token_count": 430,
+        "total_token_count": 475
+      }
+    },
+    {
+      "number": 2,
+      "declared_tools": [
+        "search_policy"
+      ],
+      "returned_calls": [],
+      "usage": {
+        "cached_content_token_count": 384,
+        "candidates_token_count": 46,
+        "prompt_token_count": 783,
+        "total_token_count": 829
+      },
+      "returned_text": true
+    }
+  ],
+  "actual_model_calls": 2,
+  "interpretation": "单条在线冒烟，不代表完整模型质量评估",
+  "report_format": "compact-online-smoke-v1"
+}

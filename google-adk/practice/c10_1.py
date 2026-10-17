@@ -68,8 +68,12 @@ def validate_dataset(dataset: dict) -> list[str]:
         if not turns:
             problems.append(f"{case_id}: test_spec.turns 为空")
 
+        if len(turns) != len(conversation):
+            problems.append(f"{case_id}: 断言轮数与 conversation 不一致")
         has_text_assertion = False
         for turn in turns:
+            if not isinstance(turn.get("expected_refunds_created"), list):
+                problems.append(f"{case_id}: 缺少明确的账本写入期望（拒绝路径应为 []）")
             if (
                 turn.get("required_keywords")
                 or turn.get("forbidden_keywords")
@@ -100,7 +104,7 @@ def main():
     print("分类分布：", dict(categories))
 
     assert not problems, "评估集校验失败：\n" + "\n".join(problems[:10])
-    print("✅ 规模、分类、结构与断言字段全部符合要求")
+    print("✅ 规模、分类、轮数与账本断言字段符合要求；这不等于质量门禁通过")
 
 
 if __name__ == "__main__":

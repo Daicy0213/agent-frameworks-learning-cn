@@ -1,0 +1,10 @@
+{
+  "corpus_version": "after-sales-2026-10-01",
+  "documents": [
+    {"document_id": "returns", "version": "2025-01", "tenant_id": "shop-a", "title": "旧版退货政策", "valid_from": "2025-01-01", "valid_until": "2026-01-01", "file": "returns-2025.md"},
+    {"document_id": "returns", "version": "2026-01", "tenant_id": "shop-a", "title": "退货与退款政策", "valid_from": "2026-01-01", "valid_until": null, "file": "returns-2026.md"},
+    {"document_id": "shipping", "version": "2026-01", "tenant_id": "shop-a", "title": "退货运费政策", "valid_from": "2026-01-01", "valid_until": null, "file": "shipping-2026.md"},
+    {"document_id": "warranty", "version": "2026-01", "tenant_id": "shop-a", "title": "保修政策", "valid_from": "2026-01-01", "valid_until": null, "file": "warranty-2026.md"},
+    {"document_id": "returns", "version": "2026-01", "tenant_id": "shop-b", "title": "B 店退货政策", "valid_from": "2026-01-01", "valid_until": null, "file": "shop-b-returns.md"}
+  ]
+}

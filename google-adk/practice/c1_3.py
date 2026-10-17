@@ -1,126 +1,94 @@
-"""
-3. 验证会话隔离（进阶）
+"""第 1 章练习 3：直接检查会话历史，验证完整的会话隔离边界。
 
-创建两个用户、至少三个 `session_id`，让它们分别记住不同的颜色或项目代号，再交叉提问。
-写出自动化断言，证明：
-  - 同一个 Session 能延续上下文；
-  - 不同 Session 之间不会串话。
-
-最后补充说明 `user_id` 与 `session_id` 各自承担什么职责（见文件末尾注释）。
-
-运行：
-    cd google-adk/practice
-    uv run python c1_3.py
+运行：uv run python google-adk/practice/c1_3.py
+不调用模型、不需要密钥。模型是否复述某句话，不能证明存储是否隔离。
 """
 
 import asyncio
 
-from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.events import Event
+from google.adk.sessions import InMemorySessionService, Session
 from google.genai import types
 
 APP_NAME = "session_isolation"
-ALICE = "alice"
-BOB = "bob"
-
-deepseek_model = LiteLlm(model="deepseek/deepseek-chat")
-
-assistant = Agent(
-    name="memo_assistant",
-    model=deepseek_model,
-    instruction=(
-        "你是一个短时代号记录助手。用户告诉你一个代号时，你只需回复「已记录」。"
-        "用户询问代号时，只回答代号本身，不要解释、不要联想、不要编造。"
-        "如果用户在本轮对话里没有告诉过你任何代号，就回答「没有记录」。"
-    ),
-    description="只在当前会话内记住一个代号",
-)
-
-session_service = InMemorySessionService()
-runner = Runner(session_service=session_service, agent=assistant, app_name=APP_NAME)
 
 
-async def say(user_id: str, session_id: str, text: str) -> str:
-    """在指定 (user_id, session_id) 里说一句，返回 Agent 的最终回复文本。"""
-    try:
-        await session_service.create_session(
-            app_name=APP_NAME, user_id=user_id, session_id=session_id
-        )
-    except Exception:
-        pass  # 已存在就复用，这正是「同一 Session 延续上下文」的前提
+async def append_text(
+    service: InMemorySessionService, session: Session, text: str
+) -> None:
+    """用公开的事件接口保存一条用户消息；异常直接交给调用方。"""
+    await service.append_event(
+        session,
+        Event(
+            author="user",
+            content=types.Content(role="user", parts=[types.Part(text=text)]),
+        ),
+    )
 
-    message = types.Content(role="user", parts=[types.Part(text=text)])
-    final_text = ""
-    async for event in runner.run_async(
-        user_id=user_id, session_id=session_id, new_message=message
-    ):
-        if event.is_final_response() and event.content and event.content.parts:
-            final_text += event.content.parts[0].text or ""
-    return final_text.strip()
+
+async def history(
+    service: InMemorySessionService, app_name: str, user_id: str, session_id: str
+) -> list[str]:
+    """重新从服务读取，避免把本地变量误当成已保存的历史。"""
+    session = await service.get_session(
+        app_name=app_name, user_id=user_id, session_id=session_id
+    )
+    if session is None:
+        raise LookupError(f"找不到会话：{app_name}/{user_id}/{session_id}")
+    return [
+        part.text
+        for event in session.events
+        if event.content
+        for part in event.content.parts or []
+        if part.text is not None
+    ]
 
 
 async def main() -> None:
-    # 三个会话：alice 两个，bob 一个。代号刻意做得互不相似，避免误判。
-    await say(ALICE, "alice_work", "记住：我负责的项目代号是 ZEBRA-7。")
-    await say(ALICE, "alice_personal", "记住：我个人的代号是 FALCON-3。")
-    await say(BOB, "bob_work", "记住：我负责的项目代号是 OTTER-9。")
+    service = InMemorySessionService()
+    # 有意复用 work：session_id 单独并不是全局的会话身份。
+    cases = {
+        (APP_NAME, "alice", "work"): "ZEBRA-7",
+        (APP_NAME, "alice", "personal"): "FALCON-3",
+        (APP_NAME, "bob", "work"): "OTTER-9",
+        ("another_app", "alice", "work"): "PANDA-2",
+    }
+    for (app, user, sid), code in cases.items():
+        session = await service.create_session(
+            app_name=app, user_id=user, session_id=sid
+        )
+        await append_text(service, session, code)
 
-    print("三个会话已分别写下代号，开始交叉提问：\n")
+    # 同 app/同 user 换 session、同 app/同 session 换 user、同 user/session 换 app。
+    for key, code in cases.items():
+        assert await history(service, *key) == [code], key
 
-    # --- 验收 ①：同一个 Session 能延续上下文 ---
-    a1 = await say(ALICE, "alice_work", "我负责的项目代号是什么？")
-    a2 = await say(ALICE, "alice_personal", "我个人的代号是什么？")
-    b1 = await say(BOB, "bob_work", "我负责的项目代号是什么？")
-    print(f"alice/alice_work     -> {a1}")
-    print(f"alice/alice_personal -> {a2}")
-    print(f"bob/bob_work         -> {b1}")
+    current = await service.get_session(
+        app_name=APP_NAME, user_id="alice", session_id="work"
+    )
+    assert current is not None
+    await append_text(service, current, "第二条消息")
+    assert await history(service, APP_NAME, "alice", "work") == [
+        "ZEBRA-7", "第二条消息"
+    ]
+    for key, code in cases.items():
+        if key != (APP_NAME, "alice", "work"):
+            assert await history(service, *key) == [code]
 
-    assert "ZEBRA-7" in a1.upper(), f"alice_work 应该记住 ZEBRA-7，实际：{a1}"
-    assert "FALCON-3" in a2.upper(), f"alice_personal 应该记住 FALCON-3，实际：{a2}"
-    assert "OTTER-9" in b1.upper(), f"bob_work 应该记住 OTTER-9，实际：{b1}"
-    print("\n① 同一 Session 能延续上下文 ✅")
-
-    # --- 验收 ②：不同 Session 之间不串话 ---
-    # 关键点：alice 的两个会话属于同一个 user_id，内容依然必须互不可见。
-    assert "FALCON-3" not in a1.upper(), f"alice_work 不该看到另一个会话的代号：{a1}"
-    assert "ZEBRA-7" not in a2.upper(), f"alice_personal 不该看到另一个会话的代号：{a2}"
-    assert "ZEBRA-7" not in b1.upper(), f"bob 不该看到 alice 的代号：{b1}"
-    assert "OTTER-9" not in a1.upper(), f"alice 不该看到 bob 的代号：{a1}"
-    print("② 不同 Session 之间不串话（包括同一个 user_id 下的两个会话）✅")
-
-    # --- 验收 ③：全新 Session 是「空白」的 ---
-    fresh = await say(ALICE, "alice_brand_new", "我负责的项目代号是什么？")
-    print(f"alice/alice_brand_new -> {fresh}")
-    assert "ZEBRA-7" not in fresh.upper(), f"全新会话不该继承任何代号：{fresh}"
-    print("③ 全新 Session 没有任何历史上下文 ✅")
-
-    print("\n✅ 练习 3 通过：会话隔离成立，且隔离边界是 session_id 而不是 user_id")
+    await service.create_session(
+        app_name=APP_NAME, user_id="alice", session_id="fresh"
+    )
+    assert await history(service, APP_NAME, "alice", "fresh") == []
+    assert await service.get_session(
+        app_name=APP_NAME, user_id="unknown", session_id="work"
+    ) is None
+    print("通过：历史按 (app_name, user_id, session_id) 隔离，同一会话保留两条消息。")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 
-# ---------------------------------------------------------------------------
-# 参考答案（先自己写，再看这里）
-#
-# **user_id 和 session_id 分别管什么？**
-#
-#   user_id —— 「这是谁」。
-#     它标识一个终端用户，把属于同一个人的多个会话归到一起。
-#     它的作用是**跨会话**的：State 的 `user:` 前缀、Memory 的长期记忆，
-#     都以 user_id 为作用域。所以 alice 的两个会话共享用户级数据，
-#     但**不共享会话级数据** —— 这正是上面验收 ② 成立的原因。
-#
-#   session_id —— 「这是哪一次对话」。
-#     它标识一次具体的会话，是对话历史的边界，也是会话级 State 的容器。
-#
-# 一句话记法：
-#   user_id 决定「你的长期资料给谁看」，session_id 决定「这次聊的天算哪一轮」。
-#
-# **为什么这不是「模型记住了」？**
-#   模型本身是无状态的 —— 每次请求都要把需要的历史重新发过去。
-#   SessionService 的职责就是替你保存并回放这段历史。
-#   所以隔不隔离，取决于服务按什么键取历史，而不是模型有多聪明。
-# ---------------------------------------------------------------------------
+# app_name 选择应用，user_id 选择该应用中的用户，session_id 选择该用户的会话。
+# user: State 可以跨同一用户的会话共享；那不是把这些会话的消息历史合并。
+# 本题证明 SessionService 的存取边界。HTTP 层还必须验证调用者是否有权访问
+# 这个 user_id；把 user_id 字符串传给服务，本身不构成身份认证。

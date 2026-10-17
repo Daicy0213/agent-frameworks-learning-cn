@@ -1,0 +1,1 @@
+{"contract_marker":"RESULT_CONTRACT_V1","allowed_status":["accepted","denied"],"accepted_means":"已创建受理记录，未实际转账","required_for_accepted":["receipt_id","order_id"]}

@@ -14,7 +14,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
-from .tools import assess_refund_eligibility
+from .tools import validate_refund_request
 
 
 logger = logging.getLogger("eval_example")
@@ -92,39 +92,10 @@ def refund_policy_guard(
     if tool.name != "create_refund_request":
         return None
 
-    required = ("order_id", "amount", "reason", "approval_code", "idempotency_key")
-    missing = [name for name in required if args.get(name) in (None, "")]
-    if missing:
-        return {
-            "ok": False,
-            "blocked": True,
-            "error_code": "MISSING_REQUIRED_FIELDS",
-            "message": f"缺少必要字段：{', '.join(missing)}。退款未执行。",
-        }
-    if args["approval_code"] != "APPROVED":
-        return {
-            "ok": False,
-            "blocked": True,
-            "error_code": "APPROVAL_REQUIRED",
-            "message": "审批码无效，退款未执行。",
-        }
-
-    eligibility = assess_refund_eligibility(args["order_id"], args["reason"])
+    error = validate_refund_request(args)
+    if error:
+        return error
     amount = float(args["amount"])
-    if not eligibility.get("eligible"):
-        return {
-            "ok": False,
-            "blocked": True,
-            "error_code": "NOT_ELIGIBLE",
-            "message": eligibility.get("reason", "订单不满足退款条件。"),
-        }
-    if amount <= 0 or amount > float(eligibility["max_refund_amount"]):
-        return {
-            "ok": False,
-            "blocked": True,
-            "error_code": "AMOUNT_OUT_OF_RANGE",
-            "message": f"退款金额须大于 0 且不超过 {eligibility['max_refund_amount']:.2f} 元。",
-        }
 
     logger.info(
         json.dumps(

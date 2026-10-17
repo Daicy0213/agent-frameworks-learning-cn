@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any
 
 
@@ -49,7 +50,7 @@ _POLICIES = {
     "发票": "电子发票可在订单完成后申请，抬头一经开具不可直接修改。",
 }
 
-# 模拟支付系统中的幂等记录。只有安全回调放行后，工具本体才会写入。
+# 模拟支付系统中的幂等记录；工具本体也必须通过校验才能写入。
 _REFUND_REQUESTS: dict[str, dict[str, Any]] = {}
 
 
@@ -144,6 +145,27 @@ def assess_refund_eligibility(order_id: str, reason: str) -> dict[str, Any]:
     }
 
 
+def validate_refund_request(args: dict[str, Any]) -> dict[str, Any] | None:
+    """演示服务端策略；固定审批码只用于测试，不代表真实身份认证。"""
+    required = ("order_id", "amount", "reason", "approval_code", "idempotency_key")
+    if any(args.get(name) in (None, "") for name in required):
+        return {"ok": False, "blocked": True, "error_code": "MISSING_REQUIRED_FIELDS"}
+    if args["approval_code"] != "APPROVED":
+        return {"ok": False, "blocked": True, "error_code": "APPROVAL_REQUIRED",
+                "message": "审批码无效，退款未执行。"}
+    amount = args["amount"]
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or not math.isfinite(amount):
+        return {"ok": False, "blocked": True, "error_code": "INVALID_AMOUNT"}
+    eligibility = assess_refund_eligibility(args["order_id"], args["reason"])
+    if not eligibility.get("eligible"):
+        return {"ok": False, "blocked": True, "error_code": "NOT_ELIGIBLE",
+                "message": eligibility.get("reason", "订单不满足退款条件。")}
+    if amount <= 0 or amount > eligibility["max_refund_amount"]:
+        return {"ok": False, "blocked": True, "error_code": "AMOUNT_OUT_OF_RANGE",
+                "message": "退款金额超出可退范围，退款未执行。"}
+    return None
+
+
 def create_refund_request(
     order_id: str,
     amount: float,
@@ -151,30 +173,30 @@ def create_refund_request(
     approval_code: str,
     idempotency_key: str,
 ) -> dict[str, Any]:
-    """创建退款申请；调用前必须经过 ``refund_policy_guard``。
+    """创建退款申请；本体复核演示审批、资格、金额与幂等键。
 
     Args:
         order_id: 完整订单号。
         amount: 退款金额，不能超过可退金额。
         reason: 用户原始退款原因。
-        approval_code: 审批系统给出的演示审批码。
-        idempotency_key: 调用方生成的唯一幂等键。
+        approval_code: 演示审批系统给出的 APPROVED；生产需验证真实审批记录。
+        idempotency_key: 同一操作重试时必须复用的唯一键。
     """
-
-    # 工具本体仍实现幂等，体现“回调做策略、服务做最终一致性”的双层防护。
+    error = validate_refund_request({
+        "order_id": order_id, "amount": amount, "reason": reason,
+        "approval_code": approval_code, "idempotency_key": idempotency_key,
+    })
+    if error:
+        return error
+    payload = {"order_id": order_id.strip().upper(), "amount": float(amount), "reason": reason}
     if idempotency_key in _REFUND_REQUESTS:
-        return {
-            "ok": True,
-            "duplicate": True,
-            "request": deepcopy(_REFUND_REQUESTS[idempotency_key]),
-        }
-
+        previous = _REFUND_REQUESTS[idempotency_key]
+        if any(previous[field] != value for field, value in payload.items()):
+            return {"ok": False, "blocked": True, "error_code": "IDEMPOTENCY_CONFLICT"}
+        return {"ok": True, "duplicate": True, "request": deepcopy(previous)}
     request = {
         "refund_request_id": f"RF-{len(_REFUND_REQUESTS) + 1:04d}",
-        "order_id": order_id.strip().upper(),
-        "amount": float(amount),
-        "reason": reason,
-        "status": "待审核",
+        **payload, "status": "待审核",
     }
     _REFUND_REQUESTS[idempotency_key] = request
     return {"ok": True, "duplicate": False, "request": deepcopy(request)}

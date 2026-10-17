@@ -19,11 +19,12 @@ from typing import Any
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.adk.evaluation.final_response_match_v1 import _calculate_rouge_1_scores
 from google.genai import types
 
 from .agent import MODEL_NAME, root_agent
-from .tools import reset_demo_state
+from .business_checks import check_refund_effects
+from .rouge_compat import response_match_score
+from .tools import get_refund_requests, reset_demo_state
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -69,6 +70,14 @@ def validate_dataset(dataset: dict[str, Any], min_cases: int = 20) -> list[str]:
             errors.append(f"{case_id}: conversation 为空。")
         if len(conversation) != len(turn_specs):
             errors.append(f"{case_id}: conversation 与 test_spec.turns 数量不一致。")
+        for index, spec in enumerate(turn_specs, start=1):
+            expected = spec.get("expected_refunds_created")
+            if not isinstance(expected, list):
+                errors.append(f"{case_id} 第 {index} 轮必须显式声明 expected_refunds_created 列表。")
+                continue
+            keys = [item.get("idempotency_key") for item in expected if isinstance(item, dict)]
+            if len(keys) != len(expected) or None in keys or len(set(keys)) != len(keys):
+                errors.append(f"{case_id} 第 {index} 轮的退款预期必须有唯一幂等键。")
         for index, invocation in enumerate(conversation, start=1):
             try:
                 invocation["user_content"]["parts"][0]["text"]
@@ -184,7 +193,10 @@ async def evaluate(
         if not cases:
             raise ValueError(f"找不到案例：{selected_case}")
     if limit is not None:
+        if limit <= 0:
+            raise ValueError("--limit 必须大于 0")
         cases = cases[:limit]
+    is_smoke = selected_case is not None or limit is not None
 
     reset_demo_state()
     session_service = InMemorySessionService()
@@ -196,6 +208,7 @@ async def evaluate(
 
     results: list[dict[str, Any]] = []
     for case_index, case in enumerate(cases, start=1):
+        reset_demo_state()  # 案例隔离；同一案例内的多轮共享业务记录。
         user_id = "quality-eval"
         session_id = f"eval-{case_index}-{case['eval_id']}"
         await session_service.create_session(
@@ -208,7 +221,14 @@ async def evaluate(
             case["conversation"], case["test_spec"]["turns"], strict=True
         ):
             query = invocation["user_content"]["parts"][0]["text"]
+            ledger_before = get_refund_requests()
             turn = await _run_turn(runner, user_id, session_id, query)
+            ledger_after = get_refund_requests()
+            turn["business_effects_pass"] = check_refund_effects(
+                ledger_before, ledger_after, assertions["expected_refunds_created"]
+            )
+            turn["refund_ledger_before"] = ledger_before
+            turn["refund_ledger_after"] = ledger_after
             expected_calls = _expected_calls(invocation)
             reference = invocation["final_response"]["parts"][0]["text"]
             response = turn["response"]
@@ -222,15 +242,16 @@ async def evaluate(
                 turn["actual_tool_uses"]
             ) == _canonical(expected_calls)
             # 与 ADK response_match_score 使用同一个 Unicode-aware ROUGE-1 实现。
-            turn["response_match_score"] = _calculate_rouge_1_scores(
-                response, reference
-            ).fmeasure
-            turn["task_success_pass"] = all(
+            turn["response_match_score"] = response_match_score(response, reference)
+            turn["text_assertions_pass"] = all(
                 _normalize_assertion_text(word) in normalized_response
                 for word in required
             ) and all(
                 _normalize_assertion_text(word) not in normalized_response
                 for word in forbidden
+            )
+            turn["task_success_pass"] = (
+                turn["text_assertions_pass"] and turn["business_effects_pass"]
             )
             turn["format_pass"] = all(marker in response for marker in markers) and len(
                 response
@@ -241,6 +262,7 @@ async def evaluate(
             turn["tool_selection_pass"]
             and turn["task_success_pass"]
             and turn["format_pass"]
+            and turn["response_match_score"] >= gates["response_match_score_min"]
             for turn in turn_results
         )
         results.append(
@@ -259,14 +281,14 @@ async def evaluate(
     task_rate = statistics.fmean(turn["task_success_pass"] for turn in turns)
     tool_rate = statistics.fmean(turn["tool_selection_pass"] for turn in turns)
     format_rate = statistics.fmean(turn["format_pass"] for turn in turns)
-    response_match_score = statistics.fmean(
+    response_score = statistics.fmean(
         turn["response_match_score"] for turn in turns
     )
     safety_cases = [result for result in results if result["category"] == "safety"]
     safety_rate = (
         statistics.fmean(result["passed"] for result in safety_cases)
         if safety_cases
-        else 1.0
+        else None
     )
     input_tokens = sum(turn["input_tokens"] for turn in turns)
     output_tokens = sum(turn["output_tokens"] for turn in turns)
@@ -284,13 +306,15 @@ async def evaluate(
     )
     estimated_cost = input_tokens / 1_000_000 * input_price + output_tokens / 1_000_000 * output_price
 
+    business_rate = statistics.fmean(turn["business_effects_pass"] for turn in turns)
     metrics = {
         "dataset_case_count": case_count,
         "turn_count": len(turns),
         "case_pass_rate": statistics.fmean(result["passed"] for result in results),
         "task_success_rate": task_rate,
         "tool_selection_accuracy": tool_rate,
-        "response_match_score": response_match_score,
+        "response_match_score": response_score,
+        "business_effects_pass_rate": business_rate,
         "format_compliance_rate": format_rate,
         "safety_case_pass_rate": safety_rate,
         "p95_latency_ms": round(_percentile_95([turn["latency_ms"] for turn in turns]), 2),
@@ -302,22 +326,31 @@ async def evaluate(
         "dataset_min_cases": case_count >= gates["dataset_min_cases"],
         "task_success_rate_min": task_rate >= gates["task_success_rate_min"],
         "tool_selection_accuracy_min": tool_rate >= gates["tool_selection_accuracy_min"],
-        "response_match_score_min": response_match_score
+        "response_match_score_min": response_score
         >= gates["response_match_score_min"],
         "format_compliance_rate_min": format_rate >= gates["format_compliance_rate_min"],
-        "safety_case_pass_rate_min": safety_rate >= gates["safety_case_pass_rate_min"],
+        "safety_case_pass_rate_min": (
+            safety_rate >= gates["safety_case_pass_rate_min"] if safety_rate is not None else None
+        ),
+        "business_effects_pass_rate_min": business_rate == 1.0,
         "p95_latency_ms_max": metrics["p95_latency_ms"] <= gates["p95_latency_ms_max"],
         "estimated_total_cost_usd_max": estimated_cost
         <= gates["estimated_total_cost_usd_max"],
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "mode": "smoke" if is_smoke else "full",
+        "selected_cases_passed": all(case["passed"] for case in results),
+        "release_ready": not is_smoke and all(value is True for value in gate_results.values()),
         "created_at_unix": time.time(),
         "model": MODEL_NAME,
         "dataset_id": dataset["eval_set_id"],
         "metrics": metrics,
         "gates": gate_results,
-        "passed": all(gate_results.values()),
+        "passed": (
+            all(case["passed"] for case in results) if is_smoke
+            else all(value is True for value in gate_results.values())
+        ),
         "cases": results,
     }
 
@@ -325,7 +358,14 @@ async def evaluate(
 def compare_baseline(
     report: dict[str, Any], baseline: dict[str, Any], max_regression: float
 ) -> dict[str, bool]:
-    """检查核心比例是否比基线下降超过允许值。"""
+    """检查下降的百分点；只比较相同案例集合的完整评估。"""
+
+    if report.get("mode") != "full" or baseline.get("mode") != "full":
+        raise ValueError("基线比较需要两份完整评估报告，冒烟结果不能作为发布基线")
+    if report["dataset_id"] != baseline["dataset_id"] or {
+        case["eval_id"] for case in report["cases"]
+    } != {case["eval_id"] for case in baseline["cases"]}:
+        raise ValueError("基线比较需要相同的数据集与案例集合")
 
     keys = (
         "task_success_rate",
@@ -335,7 +375,8 @@ def compare_baseline(
         "response_match_score",
     )
     return {
-        key: report["metrics"][key] >= baseline["metrics"][key] - max_regression
+        key: (report["metrics"][key] is not None and baseline["metrics"][key] is not None
+              and report["metrics"][key] >= baseline["metrics"][key] - max_regression)
         for key in keys
     }
 
@@ -350,13 +391,19 @@ def _write_reports(report: dict[str, Any], report_dir: Path) -> tuple[Path, Path
 
     metrics = report["metrics"]
     failed_cases = [case["eval_id"] for case in report["cases"] if not case["passed"]]
+    safety = metrics["safety_case_pass_rate"]
+    safety_text = "未评估（没有安全案例）" if safety is None else f"{safety:.2%}"
+    release_text = ("未评估（冒烟只检查所选案例）" if report["mode"] == "smoke"
+                    else "通过" if report["release_ready"] else "失败")
     gate_lines = [
-        f"| {name} | {'通过' if passed else '失败'} |"
+        f"| {name} | {'未评估' if passed is None else '通过' if passed else '失败'} |"
         for name, passed in report["gates"].items()
     ]
     markdown = f"""# 售后 Agent 评估报告
 
-- 总体结论：{'通过' if report['passed'] else '失败'}
+- 运行类型：{report['mode']}
+- 所选案例：{'通过' if report['selected_cases_passed'] else '失败'}
+- 完整发布门禁：{release_text}
 - 模型：`{report['model']}`
 - 数据集：`{report['dataset_id']}`
 - 案例/轮次：{metrics['dataset_case_count']} / {metrics['turn_count']}
@@ -364,11 +411,12 @@ def _write_reports(report: dict[str, Any], report_dir: Path) -> tuple[Path, Path
 - 工具选择准确率：{metrics['tool_selection_accuracy']:.2%}
 - 回答相似度（ROUGE-1）：{metrics['response_match_score']:.2%}
 - 格式合规率：{metrics['format_compliance_rate']:.2%}
-- 安全用例通过率：{metrics['safety_case_pass_rate']:.2%}
+- 安全用例通过率：{safety_text}
+- 退款业务状态通过率：{metrics['business_effects_pass_rate']:.2%}
 - P95 延迟：{metrics['p95_latency_ms']:.2f} ms
 - 估算总成本：${metrics['estimated_total_cost_usd']:.6f}
 
-## 质量门禁
+## 完整评估门禁（冒烟仅展示观测，不授予发布资格）
 
 | 门禁 | 结果 |
 |---|---|
@@ -396,8 +444,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
+def _main() -> int:
     args = parse_args()
+    if args.baseline and (args.case or args.limit is not None):
+        print("--baseline 只能用于完整评估。", file=sys.stderr)
+        return 2
+    if args.limit is not None and args.limit <= 0:
+        print("--limit 必须大于 0。", file=sys.stderr)
+        return 2
     dataset = _read_json(args.dataset)
     gates = _read_json(args.gates)
     errors = validate_dataset(dataset, gates["dataset_min_cases"])
@@ -422,12 +476,22 @@ def main() -> int:
         )
         report["baseline_gates"] = baseline_results
         report["passed"] = report["passed"] and all(baseline_results.values())
+        report["release_ready"] = report["passed"]
 
     json_path, md_path = _write_reports(report, args.report_dir)
     print(f"JSON 报告：{json_path}")
     print(f"Markdown 报告：{md_path}")
-    print("总体结论：" + ("通过" if report["passed"] else "失败"))
+    print("所选案例：" + ("通过" if report["selected_cases_passed"] else "失败"))
+    print("发布资格：" + ("通过" if report["release_ready"] else "未取得"))
     return 0 if report["passed"] else 1
+
+
+def main() -> int:
+    try:
+        return _main()
+    except (OSError, ValueError, KeyError) as error:
+        print(f"配置或数据错误：{error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+{
+  "backend": "deepseek",
+  "different_processes": true,
+  "history_events_restored": 6,
+  "ledger_rows": 1,
+  "amount_cents": 3000,
+  "normal_and_retry_model_requests": 5,
+  "tool_path": [
+    "query_order",
+    "create_refund"
+  ]
+}

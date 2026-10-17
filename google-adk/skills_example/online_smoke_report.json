@@ -1,0 +1,338 @@
+{
+  "date": "2026-10-17",
+  "adk": "2.6.3",
+  "backend": "deepseek/deepseek-chat",
+  "request_limit": 6,
+  "snapshots": [
+    {
+      "request": 1,
+      "tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "run_skill_script"
+      ],
+      "visible": {
+        "instructions": false,
+        "reference": false,
+        "asset": false,
+        "unrelated": false
+      },
+      "context_chars": 2429
+    },
+    {
+      "request": 2,
+      "tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "run_skill_script"
+      ],
+      "visible": {
+        "instructions": false,
+        "reference": false,
+        "asset": false,
+        "unrelated": false
+      },
+      "context_chars": 3015
+    },
+    {
+      "request": 3,
+      "tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "lookup_refund_policy",
+        "request_refund",
+        "run_skill_script"
+      ],
+      "visible": {
+        "instructions": true,
+        "reference": false,
+        "asset": false,
+        "unrelated": false
+      },
+      "context_chars": 4087
+    },
+    {
+      "request": 4,
+      "tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "lookup_refund_policy",
+        "request_refund",
+        "run_skill_script"
+      ],
+      "visible": {
+        "instructions": true,
+        "reference": true,
+        "asset": true,
+        "unrelated": false
+      },
+      "context_chars": 6572
+    },
+    {
+      "request": 5,
+      "tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "lookup_refund_policy",
+        "request_refund",
+        "run_skill_script"
+      ],
+      "visible": {
+        "instructions": true,
+        "reference": true,
+        "asset": true,
+        "unrelated": false
+      },
+      "context_chars": 6965
+    }
+  ],
+  "final": "我已查到相关政策，但退款受理被服务器拒绝了，所以本次没有创建任何受理记录。\n\n**政策查询结果（租户 shop-a）**\n- `shop-a/returns@2026-01#p2`：退货验收通过后，退款在 3 个工作日内原路退回。但政策同时明确：**查询政策不代表退款已获批准或已执行，退款操作需要订单核验和独立审批。**\n- `shop-a/returns@2026-01#p1`：普通商品支持签收后 7 天内申请退货，商品须完好且附件齐全；是否受理还需核对实际订单与签收时间。\n\n**提交结果**\n- 订单：A-100，金额：120 元\n- 状态：**denied（拒绝）**\n- 原因：`server_approval_required`（缺少服务器侧审批记录）\n\n按规程，工具返回 denied 就必须停止处理。该订单属于 shop-a，需要由服务器确认的 approver 角色完成独立审批，并且审批记录中包含订单 A-100，之后才能受理。我无法代替或推断审批，因此不能声称“已受理”或“资金已到账”。\n\n**建议下一步**\n1. 请有 approver 权限的同事在系统中为该订单补齐审批记录，然后我可以再次提交受理。\n2. 同时请确认该订单的签收时间是否仍在 7 天退货窗口内，以及商品是否完好、附件齐全。这些是政策要求的受理前提。\n\n需要我在审批补齐后重新提交吗？",
+  "status": "passed",
+  "trace": [
+    {
+      "kind": "call",
+      "name": "list_skills",
+      "args": {}
+    },
+    {
+      "kind": "response",
+      "name": "list_skills",
+      "result": {
+        "skill_names": [
+          "refund-triage",
+          "shipment-status"
+        ]
+      }
+    },
+    {
+      "kind": "call",
+      "name": "load_skill",
+      "args": {
+        "skill_name": "refund-triage"
+      }
+    },
+    {
+      "kind": "response",
+      "name": "load_skill",
+      "result": {
+        "skill_name": "refund-triage",
+        "instructions_chars": 397,
+        "body_marker_present": true,
+        "additional_tools": [
+          "lookup_refund_policy",
+          "request_refund"
+        ]
+      }
+    },
+    {
+      "kind": "call",
+      "name": "load_skill_resource",
+      "args": {
+        "skill_name": "refund-triage",
+        "file_path": "references/rules.md"
+      }
+    },
+    {
+      "kind": "call",
+      "name": "load_skill_resource",
+      "args": {
+        "skill_name": "refund-triage",
+        "file_path": "assets/result-contract.json"
+      }
+    },
+    {
+      "kind": "call",
+      "name": "lookup_refund_policy",
+      "args": {
+        "query": "订单退款受理政策 退款条件 金额上限"
+      }
+    },
+    {
+      "kind": "response",
+      "name": "load_skill_resource",
+      "result": {
+        "file_path": "references/rules.md",
+        "content_chars": 235
+      }
+    },
+    {
+      "kind": "response",
+      "name": "load_skill_resource",
+      "result": {
+        "file_path": "assets/result-contract.json",
+        "content_chars": 163
+      }
+    },
+    {
+      "kind": "response",
+      "name": "lookup_refund_policy",
+      "result": {
+        "evidence_ids": [
+          "shop-a/returns@2026-01#p2",
+          "shop-a/returns@2026-01#p1",
+          "shop-a/warranty@2026-01#p1"
+        ]
+      }
+    },
+    {
+      "kind": "call",
+      "name": "request_refund",
+      "args": {
+        "order_id": "A-100",
+        "amount": 120
+      }
+    },
+    {
+      "kind": "response",
+      "name": "request_refund",
+      "result": {
+        "status": "denied",
+        "reason": "server_approval_required"
+      }
+    }
+  ],
+  "model_requests": [
+    {
+      "number": 1,
+      "declared_tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "run_skill_script"
+      ],
+      "returned_calls": [
+        {
+          "name": "list_skills",
+          "args": {}
+        }
+      ],
+      "usage": {
+        "cached_content_token_count": 0,
+        "candidates_token_count": 28,
+        "prompt_token_count": 1298,
+        "total_token_count": 1326
+      },
+      "returned_text": true
+    },
+    {
+      "number": 2,
+      "declared_tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "run_skill_script"
+      ],
+      "returned_calls": [
+        {
+          "name": "load_skill",
+          "args": {
+            "skill_name": "refund-triage"
+          }
+        }
+      ],
+      "usage": {
+        "cached_content_token_count": 1280,
+        "candidates_token_count": 58,
+        "prompt_token_count": 1461,
+        "total_token_count": 1519
+      },
+      "returned_text": true
+    },
+    {
+      "number": 3,
+      "declared_tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "lookup_refund_policy",
+        "request_refund",
+        "run_skill_script"
+      ],
+      "returned_calls": [
+        {
+          "name": "load_skill_resource",
+          "args": {
+            "skill_name": "refund-triage",
+            "file_path": "references/rules.md"
+          }
+        },
+        {
+          "name": "load_skill_resource",
+          "args": {
+            "skill_name": "refund-triage",
+            "file_path": "assets/result-contract.json"
+          }
+        },
+        {
+          "name": "lookup_refund_policy",
+          "args": {
+            "query": "订单退款受理政策 退款条件 金额上限"
+          }
+        }
+      ],
+      "usage": {
+        "cached_content_token_count": 1024,
+        "candidates_token_count": 172,
+        "prompt_token_count": 2016,
+        "total_token_count": 2188
+      },
+      "returned_text": true
+    },
+    {
+      "number": 4,
+      "declared_tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "lookup_refund_policy",
+        "request_refund",
+        "run_skill_script"
+      ],
+      "returned_calls": [
+        {
+          "name": "request_refund",
+          "args": {
+            "order_id": "A-100",
+            "amount": 120
+          }
+        }
+      ],
+      "usage": {
+        "cached_content_token_count": 2176,
+        "candidates_token_count": 67,
+        "prompt_token_count": 2891,
+        "total_token_count": 2958
+      },
+      "returned_text": true
+    },
+    {
+      "number": 5,
+      "declared_tools": [
+        "list_skills",
+        "load_skill",
+        "load_skill_resource",
+        "lookup_refund_policy",
+        "request_refund",
+        "run_skill_script"
+      ],
+      "returned_calls": [],
+      "usage": {
+        "cached_content_token_count": 2816,
+        "candidates_token_count": 324,
+        "prompt_token_count": 2988,
+        "total_token_count": 3312
+      },
+      "returned_text": true
+    }
+  ],
+  "actual_model_calls": 5,
+  "interpretation": "单条在线冒烟，不代表完整模型质量评估",
+  "exact_offline_sequence_followed": false,
+  "observation": "真实模型在同一轮并行加载两份资源和查询政策；操作受理发生在它们返回之后。",
+  "report_format": "compact-online-smoke-v1"
+}

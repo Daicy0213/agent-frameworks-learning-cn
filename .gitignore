@@ -20,3 +20,10 @@ google-adk/workflow_example/runs/
 
 # ADK CLI 本地会话缓存
 google-adk/**/.adk/
+
+# Course verification environments and generated reports
+.venv-eval/
+.uv-cache/
+google-adk/eval_example/reports/*.json
+google-adk/official_eval_example/reports/
+google-adk/capstone/runs/

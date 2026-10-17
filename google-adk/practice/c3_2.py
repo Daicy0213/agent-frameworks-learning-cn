@@ -11,6 +11,8 @@
 """
 
 from uuid import uuid4
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field
 
 from google.adk.agents import Agent
 from google.adk.runners import Runner
@@ -33,6 +35,15 @@ INSTRUCTION = """你是客服分诊员。根据用户信息判断问题类型与
 只输出 JSON，字段固定为：
 {"user_level": "...", "issue_type": "...", "priority": "low|normal|high", "reply_language": "...", "next_action": "..."}
 """
+
+
+class TriageResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_level: str = Field(min_length=1)
+    issue_type: str = Field(min_length=1)
+    priority: Literal["low", "normal", "high"]
+    reply_language: str = Field(min_length=1)
+    next_action: str = Field(min_length=1)
 
 
 def build_agent() -> Agent:
@@ -67,9 +78,9 @@ async def run_case(agent, label, initial_state):
     assert session is not None
     result = session.state.get("triage")
     assert isinstance(result, str), f"{label}: output_key 没有写入状态"
-    assert "priority" in result and "next_action" in result
-    print(f"[{label}] {result[:120]}")
-    return result
+    parsed = TriageResult.model_validate_json(result)
+    print(f"[{label}] {parsed.model_dump()}")
+    return parsed
 
 
 async def main():
@@ -87,8 +98,8 @@ async def main():
     )
     missing = await run_case(agent, "缺少状态", {})
 
-    assert "high" in vip.lower(), "VIP 的优先级应至少为 high"
-    assert "unknown" in missing.lower(), "缺状态时应写 unknown，而不是猜测"
+    assert vip.priority == "high", "VIP 的优先级应至少为 high"
+    assert missing.user_level == "unknown" and missing.reply_language == "unknown", "缺状态时应写 unknown，而不是猜测"
     print("✅ 三种情况都写入了 output_key，且 VIP 规则生效")
 
 

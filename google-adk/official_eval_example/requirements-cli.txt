@@ -1,0 +1,9 @@
+# 独立 CLI 环境；仅验证轨迹与 ROUGE，不安装 Vertex Judge 的完整 [eval] 扩展。
+# 使用与主课程相同的 ADK / LiteLLM 版本，不降级主环境。
+google-adk==2.6.3
+litellm==1.96.2
+rouge-score==0.1.2
+pandas==2.3.3
+tabulate==0.9.0
+# ADK 2.6.3 默认指标注册表在导入时依赖 Vertex SDK；不启用其 evaluation extra。
+google-cloud-aiplatform==2.5.0

@@ -1,7 +1,7 @@
 """第 7 章练习 1：多层输入护栏。
 
 不调用模型：直接构造 LlmRequest 调用回调，验证"命中即短路、未命中放行"。
-这样测试是确定性的，也证明护栏在模型之前生效。
+这是确定性的单元测试；回调在真实 Runner 中是否接线成功由第 12 章验证。
 
 运行：uv run python c7_1.py
 """
@@ -90,7 +90,7 @@ def main():
     long_text = "安" * (MAX_INPUT_CHARS + 1)
     assert isinstance(safety_guard(None, make_request(long_text)), LlmResponse)
 
-    print("✅ 正常放行、敏感词、提示注入、超长输入四类用例全部通过")
+    print("✅ 已知规则通过；关键词过滤存在误报和漏报，不能替代工具授权")
 
 
 if __name__ == "__main__":
