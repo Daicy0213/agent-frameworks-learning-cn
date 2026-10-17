@@ -18,16 +18,29 @@ agent-frameworks/
 │
 ├── google-adk/                            【Google ADK 系列】
 │   ├── 01-初识ADK-快速上手.ipynb
-│   ├── 02-Agent详解与模型接入.ipynb
-│   ├── 03-工具系统.ipynb
-│   ├── 04-多智能体与工作流.ipynb
-│   ├── 05-会话-状态与记忆.ipynb
-│   ├── 06-回调-观测与部署.ipynb
-│   ├── 07-动态工作流-Dynamic-agent-workflows.ipynb
-│   ├── 08-动态工作流-恢复与运行保障.ipynb
-│   ├── practice/                          ← 各章练习的参考实现（c1_* / c7_* / c8_*）
-│   ├── eval_example/                      ← 第六章「评估」的完整可运行工程
-│   └── workflow_example/                  ← 第八章独立进程综合工程
+│   ├── 02-ADK工程骨架与CLI.ipynb            ← 标准工程、adk run/web/api_server
+│   ├── 03-Agent详解-指令与结构化输出.ipynb
+│   ├── 04-工具系统.ipynb
+│   ├── 05-多智能体与工作流.ipynb
+│   ├── 06-会话-状态与记忆.ipynb
+│   ├── 07-回调与可观测性.ipynb
+│   ├── 08-动态工作流基础.ipynb
+│   ├── 09-动态工作流-恢复与运行保障.ipynb
+│   ├── 10-评估与测试工程.ipynb
+│   ├── 11-流式输出与服务化.ipynb
+│   ├── 12-安全与鉴权.ipynb
+│   ├── 13-Capstone-可上线的售后Agent.ipynb
+│   ├── 附录A-术语表.md                     ← 中英术语与首次出现章节
+│   ├── 附录B-排错手册.md
+│   ├── 附录C-A2A与跨Agent互通.md
+│   ├── agent_demo/                        ← 标准工程示例（adk web/run/api_server 可直接加载）
+│   ├── mcp_example/                       ← 本地 stdio MCP Server（不联网）
+│   ├── openapi_example/                   ← 第 4 章的本地 OpenAPI 规格
+│   ├── Dockerfile                         ← 第 11 章的镜像示例
+│   ├── practice/                          ← 各章练习的参考实现（c1_* ~ c12_*）
+│   ├── eval_example/                      ← 第 10 章「评估」的完整可运行工程
+│   ├── capstone/                          ← 第 13 章综合工程
+│   └── workflow_example/                  ← 第 09 章独立进程综合工程
 │
 └── langchain-langgraph/                   【LangChain / LangGraph 系列】
     ├── 01-LangChain生态与模型接入.ipynb
@@ -95,12 +108,25 @@ uv run jupyter lab
 
 > 💡 **Mermaid 图表**：笔记中的架构图使用 Mermaid 语法，在 **VS Code**、**GitHub** 及较新版 **JupyterLab** 的 Markdown 预览中可直接渲染；纯 JupyterLab 经典界面可能显示为源码，属正常现象。
 
+## 📖 阅读约定
+
+每一章都使用同一套结构，读到深章节时可以按需取舍：
+
+| 标记 | 含义 | 怎么用 |
+|---|---|---|
+| **你已会 / 读完后你能 / 本章不碰** | 读者契约 | 先确认前置知识，避免在未知概念上卡住 |
+| **主线 / 深读** | 双轨阅读 | 时间有限只走主线；折叠块「深入」第二次再读 |
+| **先猜** | 预测题 | 先在心里回答，再运行代码对照 |
+| **📌 / ⚠️** | 结论 / 陷阱 | 每节最多一个，先读结论再读代码 |
+| **用五句话复述** | 章末自检 | 合上笔记讲给别人听，讲不出就回到对应小节 |
+| [附录A-术语表](google-adk/附录A-术语表.md) | 术语速查 | 中英名、代码名、一句话解释、首次出现章节 |
+
 ## 🧭 推荐学习路径
 
 ```mermaid
 flowchart TD
     A["00 框架全景与选型对比<br/>（建立全局认知）"] --> B{"选择学习线路"}
-    B --> C["Google ADK 线路<br/>01 → 02 → 03 → 04 → 05 → 06 → 07 → 08"]
+    B --> C["Google ADK 线路<br/>01 → 02 → 03 → 04 → 05 → 06 → 07<br/>→ 08 → 09 → 10 → 11 → 12 → 13"]
     B --> D["LangChain / LangGraph 线路<br/>01 → 02 → 03 → 04 → 05 → 06"]
     C --> E["对照阅读：两大框架同主题章节互看<br/>（工具 vs 工具、多智能体 vs 多智能体……）"]
     D --> E
@@ -110,4 +136,5 @@ flowchart TD
 - **零基础**：先读 `00`，再任选一条线路顺序学习；
 - **已有 LangChain 经验**：直接进 ADK 线路，每章末尾都有「与 LangChain 对照」小节；
 - **已有 ADK 经验**：直接进 LangChain 线路，重点关注 `04`（LangGraph 图模型）——这是两个框架设计哲学差异最大的地方。
-- **ADK 2.x 动态编排**：先读 [07-动态工作流基础](google-adk/07-动态工作流-Dynamic-agent-workflows.ipynb)，从第四章写作流水线迁移，学习传值、条件、迭代和并发；再读 [08-恢复与运行保障](google-adk/08-动态工作流-恢复与运行保障.ipynb)，学习人工确认、checkpoint、execution ID、重试、超时与存储幂等。第八章的 [综合工程](google-adk/workflow_example/README.md) 实际验证三进程间的模型调用、持久归档与故障恢复。两章分别独立运行，需要 `DEEPSEEK_API_KEY`，均保留实际执行输出和验收汇总；所需依赖已纳入 `uv sync`。
+- **ADK 2.x 动态编排**：先读 [08-动态工作流基础](google-adk/08-动态工作流基础.ipynb)，从第 05 章写作流水线迁移，学习传值、条件、迭代和并发；再读 [09-恢复与运行保障](google-adk/09-动态工作流-恢复与运行保障.ipynb)，学习人工确认、checkpoint、execution ID、重试、超时与存储幂等。第 09 章的 [综合工程](google-adk/workflow_example/README.md) 实际验证三进程间的模型调用、持久归档与故障恢复。两章分别独立运行，需要 `DEEPSEEK_API_KEY`，均保留实际执行输出和验收汇总；所需依赖已纳入 `uv sync`。
+- **生产化进阶**：[10-评估与测试工程](google-adk/10-评估与测试工程.ipynb) → [11-流式输出与服务化](google-adk/11-流式输出与服务化.ipynb) → [12-安全与鉴权](google-adk/12-安全与鉴权.ipynb) → [13-Capstone](google-adk/13-Capstone-可上线的售后Agent.ipynb)。第 13 章把前 12 章串成一个可验收的完整工程。

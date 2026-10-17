@@ -1,13 +1,14 @@
-"""第 7、8 章练习参考实现的共用工具。
+"""练习参考实现的共用工具。
 
-这几个函数与 07、08 两章 Notebook 里的同名函数保持一致，
-抽到这里是为了避免每个练习文件都重复一遍样板代码。
+`deepseek` / `input_text` / `collect` / `start` 与 07、08 两章 Notebook 保持一致；
+`require_google_adk` 与 `run` 供各章练习复用，避免每个文件重复样板代码。
 """
 
 from __future__ import annotations
 
 import asyncio
 import importlib.metadata as metadata
+import inspect
 import json
 import os
 from uuid import uuid4
@@ -95,12 +96,15 @@ async def start(workflow, payload, *, session_service=None, artifact_service=Non
 
 
 def run(main_fn, *, need_api_key: bool = True) -> None:
-    """统一入口：先检查环境，再跑异步主函数。
+    """统一入口：先检查环境，再跑主函数。
 
     不调用模型的练习传 need_api_key=False，这样无需 DEEPSEEK_API_KEY 也能跑通。
+    主函数可以是 async 的，也可以是普通同步函数。
     """
     if need_api_key:
         require_env()
     else:
         require_google_adk()
-    asyncio.run(main_fn())
+    result = main_fn()
+    if inspect.isawaitable(result):
+        asyncio.run(result)

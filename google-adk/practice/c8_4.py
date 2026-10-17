@@ -1,151 +1,176 @@
-"""练习 4（工程）：模型异常下的部分成功策略。
+"""练习 4（进阶）：修订预算的三条路径。
 
-题目：为其中一项注入模型异常，定义"一项失败是否整批失败"的策略，并写成断言。
+题目：扩展第 8 章第 4 节的检查，覆盖三条路径——一次通过、修改一次后通过、预算耗尽。
 
 验收：
-- 策略必须显式——要么整批失败，要么明确标记部分成功；禁止静默降级；
-- 说明为什么"部分成功"必须出现在返回值里，而不是只打在日志里。
+- 三条路径都断言 stop_reason 与 revisions 的具体取值；
+- 预算耗尽必须返回失败，不得把最后一稿标为成功；
+- 哪条路径调用了模型、调用了几次，也要断言出来。
 
-本练习用注入异常模拟模型故障（而不是真的把模型打挂），这样策略本身才是可复现、可测试的。
-真实项目里也应该这么写测试：把"模型失败"变成一个你能随时触发的开关。
+设计要点：把"业务规则检查"（纯函数、确定性）和"模型修改"（有抖动）分开。
+这样三条路径里只有真正需要修改的那条才会花钱。
 """
 
 from __future__ import annotations
 
 import json
 
+from pydantic import BaseModel, Field
+
 from google.adk import Context, Workflow
+from google.adk.agents import Agent
 from google.adk.workflow import node
 
-from _common import input_text, run, start
+from _common import deepseek, input_text, run, start
 
-ITEMS = [
-    {"id": "good", "topic": "动态工作流"},
-    {"id": "bad", "topic": "触发模型异常的这一项"},
+model_responses: list[str] = []
+
+
+def record_response(callback_context, llm_response):
+    model_responses.append(callback_context.agent_name)
+    return None
+
+
+polisher = Agent(
+    name="polisher",
+    model=deepseek(),
+    mode="single_turn",
+    instruction=(
+        "按 findings 修复 draft，只改被指出的问题，不要破坏已经合格的部分。"
+        "标题不能为空，正文 60～120 个字符，必须包含“例如”。"
+        '只输出 JSON：{"title": "标题", "body": "正文"}。'
+    ),
+    after_model_callback=record_response,
+)
+
+
+class Draft(BaseModel):
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
+class WritingRequest(BaseModel):
+    topic: str = Field(min_length=1)
+    required_terms: list[str] = Field(default_factory=list)
+
+
+@node
+def review_article(node_input: dict) -> dict:
+    """纯业务规则检查：确定性、不花钱、不抛异常。"""
+    request = WritingRequest.model_validate(node_input["request"])
+    draft = Draft.model_validate(node_input["draft"])
+    findings = []
+    if not draft.title.strip():
+        findings.append("标题不能为空白")
+    if not 60 <= len(draft.body) <= 120:
+        findings.append(f"正文 {len(draft.body)} 字，要求 60～120 字")
+    for term in dict.fromkeys(["例如", *request.required_terms]):
+        if term not in draft.body:
+            findings.append(f"正文必须包含：{term}")
+    return {"passed": not findings, "findings": findings}
+
+
+@node(rerun_on_resume=True)
+async def refine_article(ctx: Context, node_input: dict) -> dict:
+    request, draft = node_input["request"], node_input["draft"]
+    budget = node_input["max_revisions"]
+    if not isinstance(budget, int) or isinstance(budget, bool) or budget < 0:
+        raise ValueError("max_revisions 必须是非负整数")
+
+    for revision in range(budget + 1):
+        review = await ctx.run_node(
+            review_article, {"request": request, "draft": draft}
+        )
+        if review["passed"] or revision == budget:
+            return {
+                "draft": draft,
+                **review,
+                "revisions": revision,
+                "stop_reason": "passed" if review["passed"] else "revision_limit",
+            }
+        # 只有"不通过且还有预算"时才调用模型
+        draft = Draft.model_validate_json(
+            await ctx.run_node(
+                polisher,
+                {
+                    "request": request,
+                    "draft": draft,
+                    "findings": review["findings"],
+                },
+            )
+        ).model_dump()
+    raise AssertionError("不可达：循环一定会在某次 return")
+
+
+@node(rerun_on_resume=True)
+async def refinement_entry(ctx: Context, node_input):
+    return await ctx.run_node(refine_article, json.loads(input_text(node_input)))
+
+
+refinement = Workflow(name="refinement", edges=[("START", refinement_entry)])
+
+VALID_DRAFT = {
+    "title": "程序员的写作练习",
+    "body": (
+        "写作可以帮助程序员梳理需求、说明设计理由并减少沟通误差。例如，"
+        "在接口变更前写清输入、输出与兼容范围，团队就能及时发现遗漏，"
+        "也方便后来维护的人理解当时的选择。"
+    ),
+}
+
+CASES = [
+    # (说明, draft, 预算, 期望 passed, 期望 stop_reason, 期望 revisions, 期望模型调用次数)
+    ("一次通过", VALID_DRAFT, 0, True, "passed", 0, 0),
+    ("预算耗尽", {"title": "初稿", "body": "太短"}, 0, False, "revision_limit", 0, 0),
+    (
+        "修改一次后通过",
+        {**VALID_DRAFT, "body": VALID_DRAFT["body"].replace("例如", "比如")},
+        1,
+        True,
+        "passed",
+        1,
+        1,
+    ),
 ]
 
 
-async def fake_model_call(request: dict) -> dict:
-    """替代真实模型节点：对 bad 这一项抛异常，其余正常返回。"""
-    if request["id"] == "bad":
-        raise RuntimeError("模拟模型服务异常：这一项没能生成内容")
-    return {"title": request["topic"], "body": f"关于{request['topic']}的介绍。"}
-
-
-async def run_batch(collect_mode: str) -> dict:
-    """collect_mode: 'partial' = 允许部分成功；'all_or_nothing' = 一项失败整批失败。"""
-
-    @node
-    async def write_item(node_input: dict) -> dict:
-        draft = await fake_model_call(node_input["request"])
-        return {"id": node_input["request"]["id"], "draft": draft}
-
-    @node(rerun_on_resume=True)
-    async def batch(ctx: Context, node_input: dict):
-        results, failed = [], []
-        for request in node_input["items"]:
-            try:
-                results.append(await ctx.run_node(write_item, {"request": request}))
-            except Exception as error:
-                if collect_mode == "all_or_nothing":
-                    # 策略 A：一项失败，整批失败。异常继续往上抛，绝不假装成功。
-                    raise RuntimeError(
-                        f"整批失败：{request['id']} 生成失败（{error}）"
-                    ) from error
-                # 策略 B：部分成功。失败信息必须进入**返回值**，而不是只写日志。
-                failed.append({"id": request["id"], "error": str(error)})
-
-        if failed:
-            return {
-                "status": "partial_failed",
-                "succeeded": [r["id"] for r in results],
-                "failed": failed,
-                "articles": [r["draft"] for r in results],
-            }
-        return {
-            "status": "ok",
-            "succeeded": [r["id"] for r in results],
-            "failed": [],
-            "articles": [r["draft"] for r in results],
-        }
-
-    @node(rerun_on_resume=True)
-    async def entry(ctx: Context, node_input):
-        return await ctx.run_node(batch, json.loads(input_text(node_input)))
-
-    app = Workflow(name=f"batch_{collect_mode}", edges=[("START", entry)])
-    result, *_ = await start(app, {"items": ITEMS})
-    return result
-
-
 async def main() -> None:
-    print("=" * 74)
-    print("策略 A：一项失败 → 整批失败（all_or_nothing）")
-    print("=" * 74)
-    raised = None
-    try:
-        await run_batch("all_or_nothing")
-    except Exception as error:
-        raised = error
-    assert raised is not None, "策略 A 必须把异常抛出来，而不是吞掉"
-    print("整批抛出：", type(raised).__name__, "->", raised)
-    print("✅ 整批失败：没有任何结果被伪装成成功\n")
+    request = {"topic": "程序员为什么需要学习写作", "required_terms": ["例如"]}
+    print(f"{'路径':<16}{'passed':<9}{'stop_reason':<16}{'revisions':<11}{'模型调用'}")
+    print("-" * 62)
 
-    print("=" * 74)
-    print("策略 B：部分成功，但失败必须显式出现在返回值里（partial）")
-    print("=" * 74)
-    result = await run_batch("partial")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    for label, draft, budget, want_passed, want_reason, want_rev, want_calls in CASES:
+        before = len(model_responses)
+        result, *_ = await start(
+            refinement,
+            {"request": request, "draft": draft, "max_revisions": budget},
+        )
+        calls = len(model_responses) - before
 
-    # --- 核心验收：失败场景下，status 绝不能是 "ok" ---
-    assert result["status"] == "partial_failed", result
-    assert result["status"] != "ok", "有失败项时不允许返回 ok"
-    # 按条目断言，而不是按错误文案断言 —— 下面会解释为什么
-    assert [f["id"] for f in result["failed"]] == ["bad"], result
-    assert result["succeeded"] == ["good"], result
-    # 成功项的产物必须还在，不能因为一项失败就全丢
-    assert len(result["articles"]) == 1, result
+        # 先打印再断言，失败时也能看到实际值
+        print(
+            f"{label:<16}{str(result['passed']):<9}{result['stop_reason']:<16}"
+            f"{result['revisions']:<11}{calls}"
+        )
 
-    print("\n注意上面 failed[0].error 的文案：", result["failed"][0]["error"])
-    print(
-        "—— 这不是我们抛出的那句 '模拟模型服务异常：这一项没能生成内容'，\n"
-        "   而是框架包装后的通用消息（DynamicNodeFailError 的 message）。\n"
-    )
+        assert result["passed"] is want_passed, (label, result)
+        assert result["stop_reason"] == want_reason, (label, result)
+        assert result["revisions"] == want_rev, (label, result)
+        assert calls == want_calls, f"{label}: 预期 {want_calls} 次模型调用，实际 {calls}"
 
-    # --- 反向验收：全部成功时才允许 ok ---
-    mostly_good = await run_batch("partial")  # 同样的输入，同样的策略
-    assert mostly_good["status"] == "partial_failed"
-    print("✅ 练习 4 通过：两种策略都显式，没有静默降级")
+    print("\n✅ 练习 4 通过：三条路径的 stop_reason / revisions / 模型调用次数都符合预期")
     print("""
-题目要求说清楚的两件事：
+两个容易写错的点：
 
-**为什么必须先选策略？**
-  "一项失败"在业务上通常有两种完全不同的含义：
-    - 这是**一批必须同时成立**的变更（比如批量转账、批量发布）→ 整批失败；
-    - 这是**一批互相独立的条目**（比如批量生成文章）→ 部分成功可以接受。
-  框架不知道你的业务属于哪种，所以你必须选，而且要把它写进断言里。
+1. **"预算耗尽"必须返回失败。** 很诱人的做法是"那就用最后一稿吧，反正也改过了"，
+   然后把 passed 置为 True。这等于告诉调用方"任务成功了"，而实际上规则并没有通过。
+   正确做法是如实返回 revision_limit，让上层决定要不要接受。
 
-**为什么"部分成功"必须出现在返回值里，而不是只打日志？**
-  因为**日志不会让调用方停下来**。上层代码看到的是 result["status"]，
-  它据此决定要不要重试、要不要人工介入、要不要对外发布。
-  如果状态是 "ok" 而失败只躺在日志里，这个"部分成功"就会被一路当成
-  "全部成功"传下去 —— 这正是最危险的那种静默降级。
-
-  所以：**凡是能影响上层决策的事实，都必须在返回值里有位置。**
-
-**顺带一个实测出来的坑：不要依赖框架的异常文案。**
-  上面 failed[0].error 拿到的是「Dynamic node write_item failed」，
-  我们自己抛的那句 "模拟模型服务异常" 被包装层丢掉了。
-  所以：
-
-    - 断言要盯**结构化字段**（哪个 id 失败、失败条目数），不要盯错误文案；
-    - 想保留失败原因，就在**离故障最近的地方**捕获并转成结构化数据返回，
-      而不是让它一路抛到外层再猜。
-
-  这也是为什么本章的 `checks` 断言统计的是计数、PID、版本号这些"硬事实"，
-  而不是去匹配某句日志文本。
+2. **初次检查不占预算。** max_revisions=1 表示"最多修改一次"，
+   所以循环跑的是 budget+1 次（第 1 次是检查，不是修改）。
+   如果把预算理解成"总检查次数"，边界就会差一。
 """)
 
 
 if __name__ == "__main__":
-    run(main, need_api_key=False)
+    run(main)

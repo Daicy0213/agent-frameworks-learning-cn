@@ -87,7 +87,7 @@ async def observe(query: str, session_id: str = SESSION_ID):
         )
 
     # 只汇总最终文本。这里用 is_final_response() 是刻意的 ——
-    # 第 7 章会告诉你它在 Workflow 里不够用（子节点也会产生「最终事件」）。
+    # 第 8 章会告诉你它在 Workflow 里不够用（子节点也会产生「最终事件」）。
     final_text = ""
     for event in events:
         if event.is_final_response() and event.content and event.content.parts:

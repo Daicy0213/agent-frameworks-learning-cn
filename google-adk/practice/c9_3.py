@@ -44,7 +44,7 @@ def make_app(name: str, retry_config, attempt_log: list[int]) -> Workflow:
             return await ctx.run_node(failing, json.loads(input_text(node_input)))
         except Exception as error:
             # 框架会把节点里的异常包一层 DynamicNodeFailError，真正的根因在 .error 上。
-            # 所以判断"到底为什么失败"时必须先拆包——第 8 章处理超时用的也是同一招。
+            # 所以判断"到底为什么失败"时必须先拆包——第 9 章处理超时用的也是同一招。
             root_cause = getattr(error, "error", error)
             return {
                 "failed_with": type(error).__name__,
@@ -135,7 +135,7 @@ async def main() -> None:
 
 顺带一个很实用的发现：**框架会把节点异常包一层 `DynamicNodeFailError`**，
 真正的根因挂在 `.error` 上。所以想判断"到底为什么失败"，
-要先 `getattr(error, "error", error)` 拆包——第 8 章处理节点超时用的正是这一招
+要先 `getattr(error, "error", error)` 拆包——第 9 章处理节点超时用的正是这一招
 （`isinstance(getattr(error, "error", error), NodeTimeoutError)`）。
 
 工程上的结论只有一句：

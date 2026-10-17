@@ -1,148 +1,154 @@
-"""练习 3（进阶）：数出框架的默认重试次数。
+"""练习 3（进阶）：把 State 传值改成显式传值。
 
-题目：写一个"每次必失败"的节点，只写 RetryConfig() 而不写 max_attempts，
-统计 ctx.attempt_count。
+题目：第 5 章的写作流水线用的是 output_key + instruction 里的 {key} 插值。
+把它改写成本章的 ctx.run_node() 返回值传值版本。
 
 验收：
-- 打印实际尝试次数并解释为什么是这个数字；
-- 再显式设 RetryConfig(max_attempts=2) 对比，说明差异从哪来；
-- 顺带验证一条：完全不写 retry_config 时，它还会重试吗？
+- 列出改造后"哪些数据不再需要进 State"；
+- 说明还有哪一类数据仍然必须留在 State；
+- 改造后流水线的模型调用次数不得增加。
 
-本练习不调用模型，也不写任何外部存储——只观察框架的重试行为。
+改造前的写法（第 5 章，SequentialAgent）：
+    SequentialAgent(sub_agents=[outliner, writer])
+    每个 Agent 用 output_key 把结果写进 State，下一个 Agent 的 instruction 里写 {key}。
+    → 所有中间结果都被塞进 Session State，只因为"传参只能走 State"。
+
+改造后：中间结果走函数返回值，只有**跨步骤共享、且指令需要插值**的东西才留在 State。
 """
 
 from __future__ import annotations
 
 import json
 
+from pydantic import BaseModel, Field
+
 from google.adk import Context, Workflow
-from google.adk.workflow import RetryConfig, node
+from google.adk.agents import Agent
+from google.adk.workflow import node
 
-from _common import input_text, run, start
+from _common import deepseek, input_text, run, start
 
-
-def make_app(name: str, retry_config, attempt_log: list[int]) -> Workflow:
-    """构造一个"每次必失败"的工作流；retry_config 传 None 表示完全不写。
-
-    注意 name 必须是合法的 Python 标识符（框架会用它拼节点路径与检查点身份），
-    所以下面用 ASCII 名字，显示用中文标签。
-    """
-
-    async def failing_body(ctx: Context, node_input: dict) -> dict:
-        attempt_log.append(ctx.attempt_count)
-        raise ConnectionError(f"故障注入：{name} 每次必失败")
-
-    # 关键：retry_config=None 时不传这个参数，模拟"完全不写"
-    if retry_config is None:
-        failing = node(failing_body)
-    else:
-        failing = node(failing_body, retry_config=retry_config)
-
-    @node(rerun_on_resume=True)
-    async def entry(ctx: Context, node_input):
-        try:
-            return await ctx.run_node(failing, json.loads(input_text(node_input)))
-        except Exception as error:
-            # 框架会把节点里的异常包一层 DynamicNodeFailError，真正的根因在 .error 上。
-            # 所以判断"到底为什么失败"时必须先拆包——第 8 章处理超时用的也是同一招。
-            root_cause = getattr(error, "error", error)
-            return {
-                "failed_with": type(error).__name__,
-                "root_cause": type(root_cause).__name__,
-                "attempts": list(attempt_log),
-            }
-
-    return Workflow(name=name, edges=[("START", entry)])
+model_responses: list[str] = []
 
 
-# 只为让实验跑得快，把等待压到 0.01 秒；默认是 1 秒起步、每次翻倍。
-FAST = {"initial_delay": 0.01, "max_delay": 0.01, "jitter": 0}
+def record_response(callback_context, llm_response):
+    """只记录调用了哪个 Agent，不修改结果。"""
+    model_responses.append(callback_context.agent_name)
+    return None
 
-SCENARIOS = [
-    (
-        "不写 retry_config",
-        "no_retry_config",
-        None,
-        1,
-        "框架根本不进重试分支：失败即失败",
+
+outliner = Agent(
+    name="outliner",
+    model=deepseek(),
+    mode="single_turn",
+    instruction=(
+        "根据输入 topic 列出三个写作要点。只输出 JSON："
+        '{"points": ["要点1", "要点2", "要点3"]}。'
     ),
-    (
-        "RetryConfig()（不写 max_attempts）",
-        "retry_config_default_max",
-        RetryConfig(exceptions=[ConnectionError], **FAST),
-        5,
-        "静默拿到 5 次预算——这是最容易记错的一格",
+    after_model_callback=record_response,
+)
+
+writer = Agent(
+    name="writer",
+    # 这里演示"仍然必须留在 State"的那一类数据：
+    # instruction 里的 {polish_style} 由 Session State 插值而来。
+    instruction=(
+        "根据 topic 和已经给出的写作要点，写一段中文短文。"
+        "语气要求：{polish_style}。"
+        '只输出 JSON：{"title": "标题", "body": "正文"}。'
     ),
-    (
-        "RetryConfig(max_attempts=1)",
-        "retry_max_attempts_1",
-        RetryConfig(max_attempts=1, exceptions=[ConnectionError], **FAST),
-        1,
-        "显式声明不重试",
-    ),
-    (
-        "RetryConfig(max_attempts=2)",
-        "retry_max_attempts_2",
-        RetryConfig(max_attempts=2, exceptions=[ConnectionError], **FAST),
-        2,
-        "包含第一次请求，所以只额外重试 1 次",
-    ),
-]
+    model=deepseek(),
+    mode="single_turn",
+    after_model_callback=record_response,
+)
+
+
+class Outline(BaseModel):
+    points: list[str] = Field(min_length=3, max_length=3)
+
+
+class Draft(BaseModel):
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
+@node(rerun_on_resume=True)
+async def writing_pipeline(ctx: Context, node_input: dict) -> dict:
+    # 这一类数据仍然要进 State：instruction 插值需要它。
+    # 写在这里（而不是塞进每一步的参数里），是因为它属于"整条流程的共享配置"。
+    ctx.state["polish_style"] = node_input["polish_style"]
+
+    # ① 显式传值：上一步的返回值直接当下一步的输入，完全不经过 State
+    outline = Outline.model_validate_json(
+        await ctx.run_node(outliner, f"主题：{node_input['topic']}")
+    )
+    draft = Draft.model_validate_json(
+        await ctx.run_node(
+            writer, f"主题：{node_input['topic']}\n写作要点：{outline.points}"
+        )
+    )
+    return {"outline": outline.model_dump(), "draft": draft.model_dump()}
+
+
+@node(rerun_on_resume=True)
+async def pipeline_entry(ctx: Context, node_input):
+    # 入口拿到的是 types.Content，先归一成字符串再解析
+    return await ctx.run_node(writing_pipeline, json.loads(input_text(node_input)))
+
+
+pipeline = Workflow(name="pipeline", edges=[("START", pipeline_entry)])
 
 
 async def main() -> None:
-    print(f"{'写法':<34}{'实际尝试':<10}{'期望':<7}{'attempt_count'}")
-    print("-" * 78)
+    calls_before = len(model_responses)
+    result, events, runner, session_id = await start(
+        pipeline,
+        {
+            "topic": "程序员为什么需要学习写作",
+            "polish_style": "简洁、面向初学者",
+        },
+    )
+    pipeline_calls = len(model_responses) - calls_before
 
-    for label, flow_name, cfg, expected, _note in SCENARIOS:
-        log: list[int] = []
-        app = make_app(flow_name, cfg, log)
-        result, *_ = await start(app, {"key": "budget"})
+    # --- 验收③：模型调用次数没有增加（改造前也是 2 次） ---
+    assert pipeline_calls == 2, f"流水线应该只调用 2 次模型，实际 {pipeline_calls} 次"
+    assert model_responses[calls_before:] == ["outliner", "writer"]
+    assert len(result["outline"]["points"]) == 3, result
 
-        attempts = result["attempts"]
-        print(f"{label:<34}{len(attempts):<10}{expected:<7}{attempts}")
+    session = await runner.session_service.get_session(
+        app_name="adk_practice", user_id="student", session_id=session_id
+    )
+    state_keys = sorted(session.state)
+    print("流水线模型调用次数：", pipeline_calls)
+    print("最终 State 的键：", state_keys)
+    print("生成的文章：", json.dumps(result["draft"], ensure_ascii=False))
 
-        assert len(attempts) == expected, (
-            f"{label}: 预期 {expected} 次尝试，实际 {len(attempts)} 次 -> {attempts}"
-        )
-        # attempt_count 从 1 开始，所以应该是 [1, 2, ..., expected]
-        assert attempts == list(range(1, expected + 1)), attempts
-        # 外层是框架包的 DynamicNodeFailError，根因才是我们抛的 ConnectionError
-        assert result["failed_with"] == "DynamicNodeFailError", result
-        assert result["root_cause"] == "ConnectionError", result
+    # --- 验收①：中间结果不再进 State ---
+    # 改造前，outline / draft 这些中间结果会以 output_key 的形式留在 State 里。
+    # 改造后它们只是局部变量和函数参数，State 里不该再出现同名键。
+    for leaked in ("outline", "draft", "points"):
+        assert leaked not in state_keys, f"{leaked!r} 不应该再进 State：{state_keys}"
 
-    print("\n✅ 练习 3 通过：四种写法的实际尝试次数与预期完全一致")
+    # --- 验收②：polish_style 仍然必须留在 State，因为它被 instruction 插值 ---
+    assert "polish_style" in state_keys, state_keys
+
+    print("\n✅ 练习 3 通过：中间结果不再经过 State，模型调用次数没有增加")
     print("""
-为什么是这个数字？—— 看框架的判断逻辑就明白了：
+小结（题目要求的"哪些不再需要 / 哪些仍然必须"）：
 
-    max_attempts = retry_config.max_attempts if retry_config.max_attempts is not None else 5
-    if attempt_count >= max_attempts:
-        return False        # 不再重试
-    if not retry_config:
-        return False        # 压根没配 retry_config，直接不重试
+不再需要进 State：
+  - 纯中间结果：大纲、初稿、评分……它们只有一个消费者，就是下一步；
+  - 只要"上一步的返回值"能直接当"下一步的参数"，就没有理由绕道 State。
 
-两行判断解释了全部四格：
+仍然必须留在 State：
+  - 需要被 instruction 插值（{key}）读取的值，例如上面的 polish_style；
+  - 需要被工具或回调读取/写入的共享数据；
+  - 需要跨步骤保留、且不由单一路径传递的流程状态
+    （例如第 9 章按条目分开的 article:<id> 摘要）。
 
-  1. **不写 retry_config** → 命中第二个判断，直接放弃 → 1 次尝试。
-     "默认重试 5 次"这个说法**只对写了 RetryConfig 的节点成立**。
-
-  2. **写了 RetryConfig() 但没写 max_attempts** → 第一个判断取到默认值 5 →
-     尝试 1、2、3、4、5 各一次，第 5 次之后 attempt_count(5) >= 5，停止。
-
-  3. **max_attempts=1** → attempt_count(1) >= 1 立刻成立 → 只有 1 次。
-
-  4. **max_attempts=2** → 2 次。注意它是**总次数**，不是"重试次数"。
-
-顺带一个很实用的发现：**框架会把节点异常包一层 `DynamicNodeFailError`**，
-真正的根因挂在 `.error` 上。所以想判断"到底为什么失败"，
-要先 `getattr(error, "error", error)` 拆包——第 8 章处理节点超时用的正是这一招
-（`isinstance(getattr(error, "error", error), NodeTimeoutError)`）。
-
-工程上的结论只有一句：
-**重试次数不要靠默认值，明确写出来。** 一个会写外部存储的节点，
-"静默拿到 5 次预算"和"完全不重试"之间的差别，可能就是 5 倍的重复副作用。
+一句话：**State 是给"多个消费者"用的；只有一个消费者的数据，用返回值就够。**
 """)
 
 
 if __name__ == "__main__":
-    run(main, need_api_key=False)
+    run(main)

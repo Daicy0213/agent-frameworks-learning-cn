@@ -8,7 +8,7 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# 第八章综合工程的本地会话、Artifact 和业务数据库
+# 第九章综合工程的本地会话、Artifact 和业务数据库
 google-adk/workflow_example/runs/
 
 # 环境变量（密钥不入库）
@@ -17,3 +17,6 @@ google-adk/workflow_example/runs/
 # IDE
 .idea/
 .vscode/
+
+# ADK CLI 本地会话缓存
+google-adk/**/.adk/
