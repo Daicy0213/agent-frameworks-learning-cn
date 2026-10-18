@@ -5,7 +5,7 @@ description = "Agent 框架深度教学：Google ADK vs LangChain / LangGraph（
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "google-adk==2.6.3",
+    "google-adk==2.12.0",
     "jupyterlab>=4.6.3",
     "langchain==1.2.15",
     "langchain-openai==1.6.0",
@@ -13,11 +13,20 @@ dependencies = [
     "litellm==1.96.2",
     "openai>=2.54.0",
     "python-dotenv>=1.2.3",
-    # 第 8 章使用 DatabaseSessionService + SQLite 验证跨进程恢复。
+    # 第 9 章使用 DatabaseSessionService + SQLite 验证跨进程恢复。
     "sqlalchemy[asyncio]>=2,<3",
     # eval_example 复用 ADK 的 Unicode ROUGE 实现计算 response_match_score。
     # 不安装完整 [eval] extra，原因见 eval_example/README.md。
     "rouge-score>=0.1.2",
+    # 第 4 章使用本地 stdio MCP Server 演示 MCPToolset，不需要 npx 或网络。
+    "mcp>=1.24,<2",
+]
+
+[dependency-groups]
+# 第 10 章与 eval_example 的离线测试使用 pytest。
+dev = [
+    "notebook>=7.6.2",
+    "pytest>=8",
 ]
 
 # 使用阿里云 PyPI 镜像作为默认源（与环境变量 UV_INDEX_URL 一致，写入项目配置保证可复现）

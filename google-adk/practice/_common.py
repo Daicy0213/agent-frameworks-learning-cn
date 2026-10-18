@@ -1,15 +1,17 @@
-"""第 7、8 章练习参考实现的共用工具。
+"""练习参考实现的共用工具。
 
-这几个函数与 07、08 两章 Notebook 里的同名函数保持一致，
-抽到这里是为了避免每个练习文件都重复一遍样板代码。
+`deepseek` / `input_text` / `collect` / `start` 与 07、08 两章 Notebook 保持一致；
+`require_google_adk` 与 `run` 供各章练习复用，避免每个文件重复样板代码。
 """
 
 from __future__ import annotations
 
 import asyncio
 import importlib.metadata as metadata
+import inspect
 import json
 import os
+import sys
 from uuid import uuid4
 
 # 使用随 LiteLLM 安装的本地成本表；模型请求仍然发往真实 DeepSeek API。
@@ -34,9 +36,19 @@ def require_env() -> None:
 
 
 def require_google_adk() -> None:
-    """只要框架版本正确即可，不涉及模型调用。"""
+    """只要框架版本正确即可，不涉及模型调用。
+
+    这里按 `主.次` 版本卡：补丁号变动不影响教学结论，次版本变动才可能改变行为
+    （例如 2.9 起"失败的节点在恢复时会重跑"），所以次版本不对就直接报错。
+
+    报错时把**解释器路径**一起打出来：这类失败十次里有九次是"跑到了别的 Python"
+    （全局 Python、旧环境、没重启的内核），只报版本号会让人误以为 `uv sync` 没生效。
+    """
     version = metadata.version("google-adk")
-    assert version == "2.6.3", f"请从项目根目录执行 uv sync（当前 google-adk {version}）。"
+    assert version.startswith("2.12."), (
+        f"当前解释器 {sys.executable} 里的 google-adk 是 {version}，本练习需要 2.12.x。\n"
+        "请从项目根目录执行 uv sync，并确认运行脚本用的是 .venv 里的 Python。"
+    )
 
 
 def deepseek(max_tokens: int = 768) -> LiteLlm:
@@ -95,12 +107,15 @@ async def start(workflow, payload, *, session_service=None, artifact_service=Non
 
 
 def run(main_fn, *, need_api_key: bool = True) -> None:
-    """统一入口：先检查环境，再跑异步主函数。
+    """统一入口：先检查环境，再跑主函数。
 
     不调用模型的练习传 need_api_key=False，这样无需 DEEPSEEK_API_KEY 也能跑通。
+    主函数可以是 async 的，也可以是普通同步函数。
     """
     if need_api_key:
         require_env()
     else:
         require_google_adk()
-    asyncio.run(main_fn())
+    result = main_fn()
+    if inspect.isawaitable(result):
+        asyncio.run(result)

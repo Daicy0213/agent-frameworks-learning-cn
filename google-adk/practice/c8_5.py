@@ -1,165 +1,116 @@
-"""练习 5（综合）：把单写入方换成幂等键服务。
+"""练习 5（工程）：用数据证明并发上限。
 
-题目：用带 UNIQUE 约束的表模拟一个外部幂等键服务，让两个进程并发归档同一个 digest。
+题目：批量 20 项，max_parallel_workers=3，记录峰值并发、总耗时和返回顺序；
+再把上限改成 1 和 20 各跑一次。
 
 验收：
-- 断言最终"一个版本 + 一条回执"；
-- 用文字指出这仍然不等于分布式事务——还需要外部存储提供什么能力。
+- 三次运行的峰值分别不超过 3 / 1 / 20；
+- 结果顺序始终等于输入顺序；
+- 用三次的数据说明"批次上限不等于服务配额"。
 
-本练习不调用模型，也不需要 ADK：它验证的是**存储层**的幂等能力，
-而这一层恰恰是 checkpoint 帮不上忙的地方。
+本练习不调用模型：工作负载用 asyncio.sleep 模拟 I/O 等待，
+这样才能把注意力放在"并发到底有没有发生"上，而不是模型抖动上。
 """
 
 from __future__ import annotations
 
 import asyncio
-import sqlite3
-from contextlib import closing
-from pathlib import Path
-from tempfile import TemporaryDirectory
+import json
+import time
 
-from _common import run
+from google.adk import Context, Workflow
+from google.adk.workflow import node
 
-SCHEMA = """
-CREATE TABLE artifacts (
-    digest    TEXT PRIMARY KEY,   -- 归档身份：内容摘要
-    filename  TEXT NOT NULL,
-    version   INTEGER NOT NULL,
-    text      TEXT NOT NULL
-);
-CREATE TABLE receipts (
-    op_key    TEXT PRIMARY KEY,   -- 幂等键：同一个业务操作只能有一条回执
-    digest    TEXT NOT NULL,
-    filename  TEXT NOT NULL,
-    version   INTEGER NOT NULL,
-    count     INTEGER NOT NULL
-);
-"""
+from _common import input_text, run, start
+
+ITEM_COUNT = 20
+SLEEP_SECONDS = 0.05
+
+# 用一个可变字典记录"当前有几个在跑"和"历史峰值"
+concurrency = {"active": 0, "peak": 0}
 
 
-def archive_once(db_path: str, digest: str, filename: str, text: str, count: int, worker: str):
-    """模拟一个进程尝试归档。返回 (结果, 是否本次真的写入)。"""
-    with closing(sqlite3.connect(db_path, timeout=5)) as db, db:
-        # 关键一：归档身份用 PRIMARY KEY 约束 —— 同一个 digest 只可能有一个版本，
-        # 而且**第二次进来不会产生新版本**，只会读到已经存在的那个。
-        db.execute(
-            "INSERT INTO artifacts (digest, filename, version, text) "
-            "VALUES (?, ?, 0, ?) ON CONFLICT(digest) DO NOTHING",
-            (digest, filename, text),
-        )
-        row = db.execute(
-            "SELECT filename, version, text FROM artifacts WHERE digest = ?", (digest,)
-        ).fetchone()
-        stored_filename, version, stored_text = row
+@node
+async def inspect_topic(node_input: str) -> dict:
+    concurrency["active"] += 1
+    concurrency["peak"] = max(concurrency["peak"], concurrency["active"])
+    try:
+        # 模拟一次 I/O 等待。换成 CPU 密集的循环，这里的并发就不会发生了
+        # —— 因为 asyncio 是单线程协作式调度，只让"等"的时间重叠。
+        await asyncio.sleep(SLEEP_SECONDS)
+        return {"topic": node_input, "characters": len(node_input)}
+    finally:
+        concurrency["active"] -= 1
 
-        # 同一身份不能绑定不同内容 —— 这是幂等键的"守护条件"
-        if stored_text != text:
-            raise ValueError(f"[{worker}] 同一归档身份不能绑定不同内容")
 
-        # 关键二：业务回执用幂等键去重，重复投递只会有一条
-        cur = db.execute(
-            "INSERT INTO receipts (op_key, digest, filename, version, count) "
-            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(op_key) DO NOTHING",
-            (f"archive:{digest}", digest, stored_filename, version, count),
-        )
-        wrote = cur.rowcount == 1
+async def run_batch(limit: int, topics: list[str]) -> dict:
+    """用给定的并发上限跑一批，返回峰值、耗时和返回顺序。"""
+    worker = node(inspect_topic, parallel_worker=True, max_parallel_workers=limit)
 
-    return {"worker": worker, "version": version, "wrote": wrote}
+    @node(rerun_on_resume=True)
+    async def batch_entry(ctx: Context, node_input):
+        return await ctx.run_node(worker, json.loads(input_text(node_input)))
+
+    batch = Workflow(name=f"batch_{limit}", edges=[("START", batch_entry)])
+
+    concurrency.update(active=0, peak=0)
+    started = time.perf_counter()
+    result, *_ = await start(batch, topics)
+    elapsed = time.perf_counter() - started
+
+    return {
+        "limit": limit,
+        "peak": concurrency["peak"],
+        "elapsed": elapsed,
+        "order": [item["topic"] for item in result],
+    }
 
 
 async def main() -> None:
-    with TemporaryDirectory(prefix="adk_c8_5_") as folder:
-        db_path = str(Path(folder) / "external.db")
-        with closing(sqlite3.connect(db_path)) as db, db:
-            db.executescript(SCHEMA)
+    topics = [f"主题{i:02d}" for i in range(ITEM_COUNT)]
+    serial_estimate = ITEM_COUNT * SLEEP_SECONDS
 
-        digest = "a" * 64
-        filename = f"batch-{digest[:12]}.md"
-        text = "# 标题\n\n归档正文内容。"
+    print(f"{ITEM_COUNT} 项，每项等待 {SLEEP_SECONDS}s（纯串行约需 {serial_estimate:.2f}s）\n")
+    print(f"{'上限':<6}{'实测峰值':<10}{'耗时(s)':<10}{'顺序正确'}")
+    print("-" * 40)
 
-        # --- 第一步：顺序执行，先确认基本语义 ---
-        first = archive_once(db_path, digest, filename, text, 2, "seq-1")
-        second = archive_once(db_path, digest, filename, text, 2, "seq-2")
-        assert first["wrote"] is True, first
-        assert second["wrote"] is False, second
-        assert first["version"] == second["version"] == 0, (first, second)
-        print("顺序两次归档：", first, second)
+    runs = []
+    for limit in (1, 3, 20):
+        info = await run_batch(limit, topics)
+        runs.append(info)
+        order_ok = info["order"] == topics
 
-        # --- 第二步：两个"进程"并发归档同一个**全新** digest ---
-        # 必须换一个新的 digest，否则上面顺序执行时已经写过了，
-        # 两个并发方都只会"读到已存在"，就测不出真正的竞态。
-        # 用线程模拟两个独立进程同时到达；SQLite 的唯一约束负责裁决。
-        race_digest = "b" * 64
-        race_filename = f"batch-{race_digest[:12]}.md"
-        results = await asyncio.gather(
-            asyncio.to_thread(
-                archive_once, db_path, race_digest, race_filename, text, 2, "concurrent-A"
-            ),
-            asyncio.to_thread(
-                archive_once, db_path, race_digest, race_filename, text, 2, "concurrent-B"
-            ),
+        print(
+            f"{limit:<6}{info['peak']:<10}{info['elapsed']:<10.2f}{order_ok}"
         )
-        print("\n并发两次归档（全新 digest）：", results)
 
-        with closing(sqlite3.connect(db_path)) as db:
-            artifact_rows = db.execute(
-                "SELECT digest, filename, version FROM artifacts"
-            ).fetchall()
-            receipt_rows = db.execute(
-                "SELECT op_key, digest, filename, version, count FROM receipts"
-            ).fetchall()
+        # --- 验收①：峰值不超过上限 ---
+        assert info["peak"] <= limit, f"上限 {limit} 被突破：峰值 {info['peak']}"
+        # --- 验收②：返回顺序始终等于输入顺序 ---
+        assert order_ok, f"上限 {limit} 时顺序被打乱：{info['order']}"
 
-        print("\n最终 artifacts 表：")
-        for row in artifact_rows:
-            print("   ", row[0][:12] + "...", row[1], "version=", row[2])
-        print("最终 receipts 表：")
-        for row in receipt_rows:
-            print("   ", row[0][:24] + "...", "version=", row[3], "count=", row[4])
+    by_limit = {r["limit"]: r for r in runs}
 
-        # --- 验收：每个 digest 各一个版本、各一条回执 ---
-        assert len(artifact_rows) == 2, f"两个 digest 各应有 1 个版本，实际 {len(artifact_rows)}"
-        assert all(row[2] == 0 for row in artifact_rows), artifact_rows
-        assert len(receipt_rows) == 2, f"两个 digest 各应有 1 条回执，实际 {len(receipt_rows)}"
-        assert {row[0] for row in artifact_rows} == {digest, race_digest}, artifact_rows
+    # 上限为 1 时，峰值必须是 1 —— 这是"串行"的对照组
+    assert by_limit[1]["peak"] == 1, by_limit[1]
+    # 上限为 3 时，并发确实发生了（峰值 2 或 3 都算发生）
+    assert by_limit[3]["peak"] >= 2, by_limit[3]
+    # 上限为 20 时，全部 20 项可以同时在跑
+    assert by_limit[20]["peak"] == ITEM_COUNT, by_limit[20]
 
-        # 并发那一轮里，**恰好有一个**真正写入，另一个读回已有的
-        race_results = [r for r in results if r["version"] == 0]
-        assert sum(1 for r in results if r["wrote"]) == 1, results
-        assert all(r["version"] == 0 for r in race_results), race_results
-        print(f"\n并发的两个写入方里，恰好 {sum(1 for r in results if r['wrote'])} 个真正写入")
+    print("\n✅ 练习 5 通过：峰值从未超过上限，返回顺序始终等于输入顺序")
+    print(f"""
+三点结论：
 
-        # --- 守护条件也要被验证：同一身份换内容必须报错 ---
-        try:
-            archive_once(db_path, digest, filename, "内容被换掉了", 2, "mutator")
-        except ValueError as error:
-            print(f"\n同一身份换内容 -> 被拒绝 ✅ （{error}）")
-        else:
-            raise AssertionError("同一 digest 绑定不同内容必须被拒绝！")
+1. **上限是真的在起作用。** 上限为 1 时峰值恰好是 1，耗时接近纯串行的
+   {serial_estimate:.2f}s；上限放宽后耗时明显下降 —— 这才叫"并发确实发生了"。
 
-        print("\n✅ 练习 5 通过：并发归档只产生一个版本、一条回执")
+2. **只看耗时是不够的。** 耗时短可能只是机器快、或者等待时间短。
+   真正能证明"并发发生过、且没超上限"的，是**在节点内部记录同时在跑的数量**。
 
-    print("""
-题目要求说清楚的那句话：
-
-**这仍然不等于分布式事务。**
-
-上面成立，靠的是三个具体的存储能力：
-  1. **唯一约束**（PRIMARY KEY / UNIQUE）—— 让"重复写入"变成一次可预期的冲突；
-  2. **原子条件写入**（INSERT ... ON CONFLICT DO NOTHING）—— 判断与写入不是两步；
-  3. **可读回**（冲突之后能 SELECT 到已有那一条）—— 才能复用而不是新建版本。
-
-缺了任何一条，上面的结论就不成立。例如把"先查有没有、没有再插入"写成两步操作，
-在并发下就会出现竞态：两个进程都查到"没有"，然后都去插入。
-
-再往外一步，还有这些窗口需要外部存储提供更强的能力：
-  - **多机、多副本**：单文件 SQLite 不共享，需要支持条件写入的共享存储
-    （带唯一索引的数据库、对象存储的 If-None-Match、Redis SETNX 等）；
-  - **跨资源事务**：归档正文和业务回执在两个系统里时，需要事务协调或对账补偿；
-  - **幂等键的生命周期**：幂等键要保留多久？过期后重复投递会怎样？
-    这决定了你能覆盖多长的时间窗口 —— 而 checkpoint 对此一无所知。
-
-一句话：**checkpoint 保证"这一步不会白跑"，外部幂等键保证"这一步跑两次也只算一次"。
-两件事，两套机制，缺一不可。**
+3. **批次上限 ≠ 服务配额。** max_parallel_workers 只约束这一个批次的节点并发。
+   如果流程里有多个批次、或者同一服务上跑着多个任务，请求会叠加。
+   生产环境要在这个上限之外，再做一层**全局的**限流。
 """)
 
 

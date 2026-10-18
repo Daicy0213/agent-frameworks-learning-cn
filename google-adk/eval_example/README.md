@@ -1,6 +1,6 @@
 # Google ADK 评估教学项目：可上线的售后 Agent
 
-这个项目把 `06-回调-观测与部署.ipynb` 中“评估集驱动迭代”的概念落到一个接近真实工程的场景：电商售后助手。它不只回答问题，还会查询订单、查询政策、判断退款资格，并在审批齐全时创建退款申请。
+这个项目把 `07-回调与可观测性.ipynb` 中“评估集驱动迭代”的概念落到一个接近真实工程的场景：电商售后助手。它不只回答问题，还会查询订单、查询政策、判断退款资格，并在审批齐全时创建退款申请。
 
 教学重点不是“让模型看起来会聊天”，而是证明下面这些性质可以被持续验证：
 
@@ -81,7 +81,7 @@ flowchart LR
 
 ## 4. 数据集设计
 
-`after_sales.evalset.json` 是 Google ADK 2.6.3 可直接解析的原生 `EvalSet`，共有 26 个案例、28 个对话轮次。
+`after_sales.evalset.json` 是 Google ADK 2.12.0 可直接解析的原生 `EvalSet`，共有 26 个案例、28 个对话轮次。
 
 | 类别 | 数量 | 主要验证内容 |
 |---|---:|---|
@@ -187,7 +187,7 @@ adk eval eval_example eval_example/eval_sets/after_sales.evalset.json `
   --print_detailed_results
 ```
 
-本仓库固定了 `google-adk==2.6.3` 与 `litellm==1.96.2`。ADK 2.6.3 的完整 `[eval]` extra 会间接引入 Vertex AI Evaluation，而它要求较旧的 LiteLLM，依赖解析会冲突。因此本项目没有强行降级整个仓库，而是：
+本仓库固定了 `google-adk==2.12.0` 与 `litellm==1.96.2`。ADK 2.12.0 的完整 `[eval]` extra 会间接引入 `google-cloud-aiplatform[evaluation]`，而后者要求 `litellm<1.86`，与本仓库锁定的 `litellm==1.96.2` 依赖解析冲突（已实测确认）。因此本项目没有强行降级整个仓库，而是：
 
 - 保留 ADK 原生 evalset 与配置，便于迁移到兼容环境；
 - 在 `run_quality_eval.py` 中使用相同的精确工具轨迹语义；
