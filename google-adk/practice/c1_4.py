@@ -201,11 +201,12 @@ def run_check() -> int:
         version = metadata.version("google-adk")
     except metadata.PackageNotFoundError:
         version = None
-    if version == "2.6.3":
-        print("  ✅ google-adk 2.6.3")
+    if version and version.startswith("2.12."):
+        print(f"  ✅ google-adk {version}")
     else:
-        print(f"  ❌ google-adk 版本：{version}（需要 2.6.3）")
-        problems.append("请从项目根目录执行 uv sync")
+        print(f"  ❌ google-adk 版本：{version}（需要 2.12.x）")
+        print(f"     当前解释器：{sys.executable}")
+        problems.append("请从项目根目录执行 uv sync，并确认用 .venv 里的 Python 运行")
 
     if os.getenv("DEEPSEEK_API_KEY"):
         print("  ✅ DEEPSEEK_API_KEY 已配置")

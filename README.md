@@ -63,7 +63,7 @@ agent-frameworks/
 uv sync
 ```
 
-> 本仓库验证时的版本：`google-adk 2.6.3`、`langchain 1.2.15`、`langgraph 1.1.10`、`langchain-openai 1.6.0`、`litellm 1.96.2`。
+> 本仓库验证时的版本：`google-adk 2.12.0`、`langchain 1.2.15`、`langgraph 1.1.10`、`langchain-openai 1.6.0`、`litellm 1.96.2`。
 > ⚠️ 注意：`langchain 1.2.x` 需要 `langgraph >= 1.0`（0.x 会出现 `No module named 'langgraph._internal'` 报错）；同时 `langchain 1.2.15` 要求 `langgraph < 1.2.0`，因此锁定在 1.1.x。
 
 ### 2. 配置 DeepSeek API Key
@@ -107,6 +107,10 @@ uv run jupyter lab
 ```
 
 > 💡 **Mermaid 图表**：笔记中的架构图使用 Mermaid 语法，在 **VS Code**、**GitHub** 及较新版 **JupyterLab** 的 Markdown 预览中可直接渲染；纯 JupyterLab 经典界面可能显示为源码，属正常现象。
+
+> ⚠️ **内核必须来自项目 `.venv`，否则报版本不符。** 第 07–09 章的自检 cell 会断言 `google-adk` 版本；如果 JupyterLab / VS Code 用的是**全局 Python**（例如 `D:\Python`），内核里读到的还是旧版本，会看到「当前内核里的 google-adk 是 2.6.3（解释器：…）」。
+>
+> 排查顺序：① 用 `uv run --env-file .env jupyter lab` 从**仓库根目录**启动；② 在 notebook 右上角确认内核是项目 `.venv`，VS Code 里把解释器选成 `.venv\Scripts\python.exe`；③ `uv sync` 之后务必 **Restart Kernel**（已加载的旧模块不会自动换掉）；④ 用 `python -c "import sys, importlib.metadata as m; print(sys.executable, m.version('google-adk'))"` 确认这条命令输出的路径在 `.venv` 下。
 
 ## 📖 阅读约定
 

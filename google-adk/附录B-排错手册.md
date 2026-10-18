@@ -2,6 +2,14 @@
 
 > 用法：先按报错关键字定位，再看"原因"和"处理"。每条都来自本教程实际运行中踩过的坑。
 
+## 〇、环境与内核
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `AssertionError: 当前内核里的 google-adk 是 2.6.3（解释器：D:\Python\python.exe）…` | 内核跑的是**全局 Python**，不是项目 `.venv`；`uv sync` 只改 `.venv` | 从仓库根目录 `uv run --env-file .env jupyter lab`；VS Code 选 `.venv\Scripts\python.exe` 作解释器；换依赖后 **Restart Kernel** |
+| 刚 `uv sync` 完，导入的还是旧类/旧函数 | 内核进程启动早于安装，`site-packages` 已加载进内存 | Restart Kernel（或重启 JupyterLab），不是重装依赖 |
+| `python -c "import google.adk"` 在终端能过、notebook 里不能过 | 终端与 kernel 的解释器不同 | 在 notebook 里打印 `sys.executable` 对照，二者必须都指向 `.venv` |
+
 ## 一、指令与状态
 
 | 现象 | 原因 | 处理 |
@@ -18,6 +26,7 @@
 | `This is not supported because chat-mode agents rely on conversational history...` | 把 `mode="chat"` 的 Agent 接在其他节点后面 | 改成 `mode="single_turn"`，让它读 `node_input` |
 | 恢复后模型被重复调用 | 父函数里的模型调用没有登记为节点，恢复时被重跑 | 把模型调用放进 `@node` 叶子节点 |
 | 已完成节点在恢复后执行计数变成 2 | 父节点没设 `rerun_on_resume=True`，或副作用写在了父函数里 | 父函数设 `True`；副作用放独立叶子节点 |
+| 恢复后"上次失败的节点"又执行了一遍 | ADK 2.9 起失败节点在恢复时会**重跑**（更早版本会当作已完成而跳过） | 节点体必须幂等；外部写入用幂等键，见第 9 章 §2.1、§5.6 |
 | 流程返回 `None`，被当成失败 | 暂停同样没有根输出 | 检查 `pending_input()` / 待处理请求事件 |
 | 只写 `RetryConfig()`，副作用执行了 5 次 | 漏写 `max_attempts`，默认预算就是 5 次 | 显式写 `RetryConfig(max_attempts=1)` 或明确次数 |
 | 超时后数据库里仍有写入 | 超时不会撤销已提交的外部写入 | 业务幂等键 + 事务边界，不能只靠超时 |

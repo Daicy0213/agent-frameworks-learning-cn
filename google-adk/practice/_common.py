@@ -11,6 +11,7 @@ import importlib.metadata as metadata
 import inspect
 import json
 import os
+import sys
 from uuid import uuid4
 
 # 使用随 LiteLLM 安装的本地成本表；模型请求仍然发往真实 DeepSeek API。
@@ -35,9 +36,19 @@ def require_env() -> None:
 
 
 def require_google_adk() -> None:
-    """只要框架版本正确即可，不涉及模型调用。"""
+    """只要框架版本正确即可，不涉及模型调用。
+
+    这里按 `主.次` 版本卡：补丁号变动不影响教学结论，次版本变动才可能改变行为
+    （例如 2.9 起"失败的节点在恢复时会重跑"），所以次版本不对就直接报错。
+
+    报错时把**解释器路径**一起打出来：这类失败十次里有九次是"跑到了别的 Python"
+    （全局 Python、旧环境、没重启的内核），只报版本号会让人误以为 `uv sync` 没生效。
+    """
     version = metadata.version("google-adk")
-    assert version == "2.6.3", f"请从项目根目录执行 uv sync（当前 google-adk {version}）。"
+    assert version.startswith("2.12."), (
+        f"当前解释器 {sys.executable} 里的 google-adk 是 {version}，本练习需要 2.12.x。\n"
+        "请从项目根目录执行 uv sync，并确认运行脚本用的是 .venv 里的 Python。"
+    )
 
 
 def deepseek(max_tokens: int = 768) -> LiteLlm:
