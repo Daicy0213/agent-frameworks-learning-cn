@@ -58,8 +58,12 @@ if __name__ == '__main__':
 
     print(asyncio.run(chat("我想要练习英语的听力")))
 
-    query = input("\033[36ms01 >> \033[0m")
-    print(asyncio.run(chat(query, session_id="s1")))
+    try:
+        query = input("\033[36ms01 >> \033[0m")
+    except (EOFError, KeyboardInterrupt):
+        print("\n未检测到交互输入，已结束演示（可重新运行并在提示符后输入内容）。")
+    else:
+        print(asyncio.run(chat(query, session_id="s1")))
 
     """
     好的，为了帮你制定一个切实可行的英语听力练习计划，我需要先了解一些信息：

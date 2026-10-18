@@ -40,13 +40,19 @@ def require_google_adk() -> None:
     assert version == "2.6.3", f"请从项目根目录执行 uv sync（当前 google-adk {version}）。"
 
 
-def deepseek(max_tokens: int = 768) -> LiteLlm:
-    """与第 8、9 章一致的接入方式：JSON Output + 本地 Pydantic 校验。"""
-    return LiteLlm(
-        model="deepseek/deepseek-chat",
-        max_tokens=max_tokens,
-        response_format={"type": "json_object"},
-    )
+def deepseek(max_tokens: int = 768, temperature: float | None = None) -> LiteLlm:
+    """与第 8、9 章一致的接入方式：JSON Output + 本地 Pydantic 校验。
+
+    temperature 为 None 时不显式传参，沿用供应商默认值；需要可重复的契约实验时传 0。
+    """
+    options = {
+        "model": "deepseek/deepseek-chat",
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    if temperature is not None:
+        options["temperature"] = temperature
+    return LiteLlm(**options)
 
 
 def input_text(value) -> str:

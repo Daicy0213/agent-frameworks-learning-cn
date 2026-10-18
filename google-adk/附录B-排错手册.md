@@ -29,6 +29,7 @@
 | `ImportError: cannot import name 'MCPToolset'` | 版本已弃用旧名，或没装 `mcp` | 用 `from google.adk.tools import McpToolset`；`uv sync` 安装 `mcp` |
 | `StdioServerParameters is not recommended` | 旧连接参数写法 | 用 `StdioConnectionParams(server_params=...)` |
 | MCP Server "进程启动失败" | `command`/路径相对于错误的工作目录 | 用 `sys.executable`，路径相对启动目录 |
+| MCP 报 `ConnectionError: ... fileno` | Jupyter 的 `sys.stderr` 不是真实文件，MCP 却拿它当 errlog；或环境禁止创建子进程管道 | 给 `McpToolset` 传真实文件的 `errlog`；Windows Jupyter 的 SelectorEventLoop 不能建 asyncio 子进程，改在独立 Python 进程中运行 stdio 验收 |
 | Agent 级 `after_tool_callback` 报 `unexpected keyword argument 'tool_response'` | 第 4 个参数名写成了 `result` | Agent 级签名是 `(tool, args, tool_context, tool_response)` |
 | Plugin 级 `after_tool_callback` 报 `unexpected keyword argument 'result'` | 套用了 Agent 级的参数名 | Plugin 级签名是 `(*, tool, tool_args, tool_context, result)` |
 | 工具被拦截但仍有副作用 | 只在回调里检查，工具本体没复核 | 工具本体再检查一次权限、参数、审批 |
@@ -50,6 +51,7 @@
 | `SessionNotFoundError` / HTTP 404 | 没先建会话，或 `session_id` 拼错 | 先 `POST /apps/{app}/users/{user}/sessions` |
 | 服务重启后会话丢失 | 显式使用内存或数据库路径/挂载改变 | `--session_service_uri` 指向 SQLite 或数据库 |
 | SQLite URL 打不开（Windows） | 用了 Git Bash 的 `/d/...` 路径 | 用相对路径，如 `sqlite+aiosqlite:///./adk_sessions.db` |
+| `adk web` / `adk api_server` 报 `attempt to write a readonly database` | agents 目录下的 `.adk/session.db` 不可写（只读挂载、受限沙箱或目录权限） | 让 agents 目录可写；或用 `--session_service_uri` 指向可写的 SQLite 路径，接口冒烟可临时用 `memory://` |
 | `/run_sse` 没有打字机效果 | 请求体没传 `"streaming": true` | 加上该字段；仍是事件级流式时检查 `RunConfig` |
 | `adk web` 找不到 Agent | 目录层级指错，或缺少 `root_agent` / 入口文件 | 传"每个子目录一个 Agent"的父目录；确认 `agent.py` 中定义了 `root_agent` |
 | 401 / 认证失败 | `DEEPSEEK_API_KEY` 没注入进程 | 用 `--env-file` 或先导出环境变量 |
@@ -62,6 +64,7 @@
 | CPU 密集任务没有加速 | `asyncio` 是单线程协作式调度 | 换多进程或线程池 |
 | 并发峰值超过预期 | 批次上限会随嵌套叠乘 | 另做全局限流；`max_parallel_workers` 只管本批次 |
 | 取消后模型仍在生成 | 客户端断开不等于服务端取消 | 显式取消任务，设置单请求超时 |
+| `asyncio.create_subprocess_exec` 报 `PermissionError [WinError 5]` | 受限沙箱禁止创建子进程命名管道；普通终端不受影响 | 换到普通终端/项目 `.venv` 运行；确认不是用线程假装“独立进程” |
 
 ## 七、评估
 

@@ -31,6 +31,8 @@ INSTRUCTION = """你是客服分诊员。根据用户信息判断问题类型与
 - VIP：先致歉，优先级至少为 high；
 - 普通用户：正常处理，优先级按问题严重程度判断；
 - 某个字段为空时，不要猜测，把对应值写成 unknown。
+- user_level 只填“用户等级”的原值；该值为空时必须写 unknown。
+- reply_language 只填“使用语言”的原值；该值为空时，即使能从用户消息推断语言，也必须写 unknown。
 
 只输出 JSON，字段固定为：
 {"user_level": "...", "issue_type": "...", "priority": "low|normal|high", "reply_language": "...", "next_action": "..."}
@@ -49,7 +51,7 @@ class TriageResult(BaseModel):
 def build_agent() -> Agent:
     return Agent(
         name="triage_agent",
-        model=deepseek(max_tokens=256),
+        model=deepseek(max_tokens=256, temperature=0),
         instruction=INSTRUCTION,
         description="读取用户上下文并输出标准化分诊结论",
         output_key="triage",
